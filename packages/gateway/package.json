@@ -1,0 +1,41 @@
+{
+  "name": "@devai/gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "test": "vitest run",
+    "test:unit": "vitest run src/tests/unit",
+    "test:integration": "vitest run src/tests/integration",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "@hono/zod-validator": "^0.4.0",
+    "drizzle-orm": "^0.36.0",
+    "@neondatabase/serverless": "^0.10.0",
+    "ioredis": "^5.4.0",
+    "zod": "^3.23.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "uuid": "^11.0.0",
+    "dotenv": "^16.4.0",
+    "bullmq": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "drizzle-kit": "^0.28.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0"
+  }
+}

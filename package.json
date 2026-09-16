@@ -1,0 +1,30 @@
+{
+  "name": "devai-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DevAI Gateway — Unified AI API endpoint with multi-provider management",
+  "workspaces": [
+    "packages/gateway",
+    "packages/dashboard"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:gateway\" \"npm run dev:dashboard\"",
+    "dev:gateway": "npm run dev -w packages/gateway",
+    "dev:dashboard": "npm run dev -w packages/dashboard",
+    "build": "npm run build -w packages/gateway && npm run build -w packages/dashboard",
+    "db:generate": "npm run db:generate -w packages/gateway",
+    "db:push": "npm run db:push -w packages/gateway",
+    "db:migrate": "npm run db:migrate -w packages/gateway",
+    "db:studio": "npm run db:studio -w packages/gateway",
+    "test": "npm run test -w packages/gateway",
+    "test:unit": "npm run test:unit -w packages/gateway",
+    "test:integration": "npm run test:integration -w packages/gateway",
+    "lint": "npm run lint -w packages/gateway && npm run lint -w packages/dashboard"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

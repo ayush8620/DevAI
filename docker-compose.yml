@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  # Local PostgreSQL (optional — use Neon in production)
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: devai
+      POSTGRES_USER: devai
+      POSTGRES_PASSWORD: devai_local_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Local Redis (optional — use Upstash in production)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass devai_redis_password
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "devai_redis_password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:
