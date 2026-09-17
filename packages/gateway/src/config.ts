@@ -20,6 +20,7 @@ const configSchema = z.object({
   ADMIN_API_KEY: z.string().min(1, 'ADMIN_API_KEY is required'),
   GATEWAY_PORT: z.coerce.number().default(3001),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  ALLOWED_ORIGINS: z.string().optional(),
 });
 
 export const config = configSchema.parse(process.env);

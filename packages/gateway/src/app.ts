@@ -13,16 +13,34 @@ import { adminAuditRoutes } from './routes/admin/audit.js';
 import { authMiddleware } from './middleware/auth.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { loggerMiddleware, logger } from './middleware/logger.js';
+import { config } from './config.js';
 
 import { AppEnv } from './types/index.js';
 
 export const app = new Hono<AppEnv>();
 
 // Global middleware
+const allowedOrigins = (config.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 app.use('*', cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001'],
+  origin: (origin) => {
+    // If no origin (e.g. server-to-server, cURL), allow
+    if (!origin) return '*';
+    // If wildcard explicitly allowed
+    if (allowedOrigins.includes('*')) return origin;
+    // Allow local development
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return origin;
+    // Allow Vercel preview and production deployments
+    if (origin.endsWith('.vercel.app')) return origin;
+    // Allow configured origins
+    if (allowedOrigins.includes(origin)) return origin;
+    return null;
+  },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
   exposeHeaders: ['X-Request-ID', 'X-Cache'],
   maxAge: 86400,
 }));
