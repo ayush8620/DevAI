@@ -51,7 +51,7 @@ export default function Dashboard() {
             <table className="w-full caption-bottom text-sm">
               <thead className="[&_tr]:border-b">
                 <tr className="border-b transition-colors hover:bg-muted/50">
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Time</th>
+                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground"></th>
                   <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Model</th>
                   <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Provider</th>
                   <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
