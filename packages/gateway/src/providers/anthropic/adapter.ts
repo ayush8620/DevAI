@@ -1,4 +1,4 @@
-import { BaseProvider } from '../base.js';
+import { BaseProvider, ChatOptions, ProviderHttpError } from '../base.js';
 import { ChatRequest, ChatResponse, ModelInfo } from '../../types/index.js';
 
 export class AnthropicProvider extends BaseProvider {
@@ -6,7 +6,7 @@ export class AnthropicProvider extends BaseProvider {
     super(id, 'anthropic', name, baseUrl);
   }
 
-  async chat(request: ChatRequest, apiKey: string): Promise<ChatResponse> {
+  async chat(request: ChatRequest, apiKey: string, options: ChatOptions = {}): Promise<ChatResponse> {
     const systemMessages = request.messages.filter(m => m.role === 'system');
     const system = systemMessages.length > 0 ? systemMessages[0].content : undefined;
     
@@ -28,17 +28,18 @@ export class AnthropicProvider extends BaseProvider {
 
     const res = await this.fetchWithTimeout(`${this.baseUrl}/messages`, {
       method: 'POST',
+      signal: options.signal,
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify(anthropicReq)
-    });
+    }, options.timeoutMs ?? 60000);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Anthropic error ${res.status}`);
+      throw new ProviderHttpError(err.error?.message || `Anthropic error ${res.status}`, res.status);
     }
 
     const data = await res.json();
