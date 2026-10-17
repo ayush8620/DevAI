@@ -55,8 +55,8 @@ npm run db:push
 npm run dev
 ```
 
-The gateway runs on `http://localhost:3001` and the dashboard on `http://localhost:3000`.
-Open **Settings** in the dashboard and paste your `ADMIN_API_KEY` (it is stored only in your browser).
+The gateway runs on `http://localhost:3001`. The dashboard runs on `http://localhost:3000`: the landing page is at `/` and the admin dashboard at `/dashboard`. The old paths (`/providers`, `/projects`, `/usage`, `/settings`, `/api-docs`) redirect to `/dashboard/...`.
+Open **Settings** (`/dashboard/settings`) and paste your `ADMIN_API_KEY` (it is stored only in your browser).
 
 ### Optional: Local PostgreSQL & Redis (Docker)
 
@@ -96,7 +96,7 @@ ADMIN_API_KEY=... PROVIDER_API_KEY=your_gemini_key npm run test:e2e
 
 ### 1. Create a Project
 
-Open the dashboard at `http://localhost:3000`, go to **Projects**, and create a new project.
+Open the dashboard at `http://localhost:3000/dashboard`, go to **Projects**, and create a new project.
 
 ### 2. Generate an API Key
 
@@ -104,7 +104,7 @@ In the project details, click **Generate API Key**. Copy the key — it's only s
 
 ### 3. Add a Provider
 
-Go to **Providers**, add a provider (OpenAI, Anthropic, Google, or Groq), then add your API credentials.
+Go to **Providers**, add a provider (OpenAI, Anthropic, Google, or Groq), then add your API credentials. You can add several keys to one provider (see [Multiple keys per provider](#multiple-keys-per-provider)).
 
 ### 4. Make Requests
 
@@ -172,11 +172,20 @@ Use the `x-devai-mode: fastest` header, or add a `devai` field to the body. The 
 
 ### Response
 
-Response headers: `x-devai-mode`, `x-devai-provider` (`<provider name>/<model>`), `x-devai-fallbacks` (failed attempts before the answer). The body is the usual OpenAI-style response plus a `devai` object:
+Response headers:
+
+- `x-devai-mode`
+- `x-devai-provider` (`<provider name>/<model>`)
+- `x-devai-fallbacks`: the number of providers that failed before the answer.
+- `x-devai-key`: the name and masked key that answered, e.g. `Gemini key (AIza...DyMg)`. Only the prefix and the last 4 characters are shown.
+- `x-devai-key-fallbacks`: the number of keys of the answering provider that failed first.
+- `x-cache`: `HIT` or `MISS`.
+
+ The body is the usual OpenAI-style response plus a `devai` object:
 
 ```json
 "devai": {
-  "mode": "best", "provider": "gem-flash", "model": "gemini-2.5-flash", "fallbacks": 0, "latency_ms": 3900,
+  "mode": "best", "provider": "gem-flash", "model": "gemini-2.5-flash", "fallbacks": 0, "key": "Gemini key (AIza…DyMg)", "key_fallbacks": 0, "latency_ms": 3900,
   "candidates": [
     {"provider": "gem-lite", "model": "gemini-2.5-flash-lite", "status": "success", "latency_ms": 397, "usage": {"total_tokens": 63}},
     {"provider": "gem-flash", "model": "gemini-2.5-flash", "status": "success", "latency_ms": 3374, "selected": true, "usage": {"total_tokens": 631}}
@@ -188,6 +197,92 @@ Response headers: `x-devai-mode`, `x-devai-provider` (`<provider name>/<model>`)
 Every provider call (including cancelled ones and the judge call) is saved as its own usage record, with its tokens, latency and status (200 ok, 499 cancelled, 502 error, 504 timeout).
 
 > Adding routing creates a new `routing` column on `projects`, so run `npm run db:push` after upgrading.
+
+## Streaming
+
+Send `"stream": true` to get OpenAI-compatible Server-Sent Events. The OpenAI SDKs work unchanged.
+
+```bash
+curl -N https://devai-gateway.onrender.com/v1/chat/completions \
+  -H "Authorization: Bearer dvai_your_api_key" -H "Content-Type: application/json" \
+  -d '{"model":"auto","stream":true,"stream_options":{"include_usage":true},
+       "messages":[{"role":"user","content":"Explain binary search"}]}'
+```
+
+```
+data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"Binary"},"finish_reason":null}]}
+data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+data: {"id":"chatcmpl-…","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":120,"total_tokens":129}}
+data: [DONE]
+```
+
+- **Failover before the first byte.** If a key or provider fails before it sends any text, the gateway retries with the next key, then the next provider. The client never sees the failure. The routing headers (`x-devai-provider`, `x-devai-key`, ...) describe the target that actually streams.
+- **Errors after text has started** cannot be retried. The gateway sends `data: {"error":{"type":"stream_error",...}}` and then `data: [DONE]`.
+- **Usage** is recorded when the stream ends: 200 on success, 499 if the client disconnects, 502 on an error mid-stream. If the provider reports no token counts, tokens are estimated.
+- **Caching.** The assembled answer is cached only if the stream finished normally (`finish_reason: "stop"`). A cache hit is replayed as SSE.
+- **Modes.** `single` streams from the first working target. `fastest` races the targets and streams from the first one that produces text; the others are cancelled. `best` waits for the judge and then sends the chosen answer as one chunk.
+- Anthropic, OpenAI, Groq, Ollama and Gemini stream natively.
+
+## Multiple keys per provider
+
+Add as many API keys as you like to one provider (**Dashboard → Providers → Add Another Key**). The gateway tries them inside that provider before moving on to the next provider.
+
+| Upstream failure | What happens to that key | Retry next key? |
+|---|---|---|
+| 429 rate limit | Cooled down for 30 s, or the provider's `Retry-After` / `RetryInfo` (5 s – 1 h) | yes |
+| 429 / 402 quota or billing exhausted | Cooled down for 10 min, or the provider's hint | yes |
+| 401 / 403, invalid API key | Cooled down for 5 min | yes |
+| 5xx, timeout, network error | That key + model is cooled down for 60 s | yes |
+| other 4xx (bad request) | No cooldown | no, moves to the next provider |
+
+- Cooldowns are per key, shared through Redis, and also kept in memory.
+- A provider is skipped only when **all** its keys are cooling down or unhealthy.
+- Google per-model quota errors cool down only that key + model, so the key can still serve other models.
+- Health checks test every key separately.
+- The Providers page shows each key's live status (active, rate limited, quota exhausted, invalid, cooling down, unhealthy, disabled) with the remaining cooldown, the last error, and requests in the last minute. You can enable or disable each key.
+
+### Key strategy
+
+The key strategy decides which key a request tries first. Keys that are cooling down are always tried last, and on any failure the next key is tried.
+
+| Strategy | Order |
+|---|---|
+| `failover` (default) | Priority order. The first healthy key is used until it fails. |
+| `round_robin` | Rotates across the healthy keys, request by request. The counter lives in Redis. |
+| `random` | Random order for each request. |
+| `least_used` | Fewest requests in the last 60 s first. |
+
+- **Priority order:** set it with the arrows on the Providers page. It is saved as `config.keyOrder`, a list of credential ids. Keys not in the list follow, oldest first.
+- **Per provider:** pick the strategy on the Providers page, or use the admin API:
+
+  ```bash
+  curl -X PATCH $GATEWAY/admin/providers/<id> -H "Authorization: Bearer $ADMIN_API_KEY" \
+    -H "Content-Type: application/json" -d '{"config":{"keyStrategy":"round_robin","keyOrder":["<credId1>","<credId2>"]}}'
+  ```
+
+  `config` is merged. Set a field to `null` to remove it.
+- **Per project:** `routing.keyStrategy` in `PATCH /admin/projects/:id`.
+- **Per request:** `"devai": {"keyStrategy": "random"}` in the body, or the header `x-devai-key-strategy: least_used`.
+
+Precedence: request body > header > project > provider > `failover`.
+
+## Gemini thinking models
+
+Gemini 2.5+ "thinking" tokens count against `maxOutputTokens`. Without a fix, a small `max_tokens` can return an empty or cut-off answer. When `max_tokens` is set, the gateway does this:
+
+| Models | What the gateway does |
+|---|---|
+| 2.5 Flash / Flash-Lite, `gemini-flash(-lite)-latest` | Turns thinking off (`thinkingBudget: 0`) |
+| 2.5 Pro | Uses the minimum budget (128), added on top of `max_tokens` |
+| Gemini 3+ | Sets `thinkingLevel: low` and adds 1024 tokens of headroom |
+| Gemma 4+ | Adds 1024 tokens of headroom |
+
+## CORS
+
+Browsers may call the gateway only from the origins listed in `ALLOWED_ORIGINS` (comma-separated, e.g. `https://your-dashboard.vercel.app`). Use `ALLOWED_ORIGINS=*` to allow every origin.
+
+- When `NODE_ENV` is not `production`, `http://localhost:*` and `127.0.0.1` are also allowed.
+- Server-to-server requests (no `Origin` header) are not affected.
 
 ## API Endpoints
 
@@ -237,7 +332,8 @@ Every provider call (including cancelled ones and the judge call) is saved as it
 - **Smart Routing** — Automatically selects the best provider based on health, quota, and latency
 - **Automatic Failover** — Retries on the next provider in priority order, with a circuit breaker for providers that are down
 - **Parallel Modes** — `fastest` (first answer wins) or `best` (an LLM judge picks the best answer), selectable per app or per request
-- **Credential Rotation** — Rotates between multiple credentials per provider
+- **Streaming** — OpenAI-compatible SSE with failover before the first byte
+- **Multiple Keys per Provider** — Per-key cooldowns and failover, with `failover`, `round_robin`, `random` or `least_used` strategies
 - **Response Caching** — Redis-based caching with SHA-256 keys
 - **Request Deduplication** — Coalesces identical in-flight requests (per gateway instance)
 - **Retry & Backoff** — Exponential backoff with jitter, automatic failover on 429
@@ -295,7 +391,8 @@ devai-gateway/
 - API keys hashed with SHA-256, prefix-based lookup
 - No API keys in logs, errors, or responses
 - Zod validation on all inputs
-- CORS configuration
+- CORS restricted to `ALLOWED_ORIGINS` (plus localhost outside production)
+- Keys shown only as prefix + last 4 (`AIza…DyMg`) in the dashboard, headers and API
 - Admin/project auth separation
 - Audit trail for all admin actions
 
@@ -308,6 +405,8 @@ devai-gateway/
 | `MASTER_ENCRYPTION_KEY` | 64-char hex string for AES-256-GCM |
 | `ADMIN_API_KEY` | Admin dashboard authentication |
 | `GATEWAY_PORT` | Gateway server port (default: 3001) |
+| `ALLOWED_ORIGINS` | Comma-separated browser origins allowed by CORS (e.g. your dashboard URL), or `*` |
+| `NODE_ENV` | `production` turns off the automatic localhost CORS allowance |
 | `NEXT_PUBLIC_API_URL` | Gateway URL for dashboard |
 
 ## License
@@ -318,6 +417,6 @@ Private — Internal use only.
 
 - **Database:** [Neon](https://neon.tech) free plan. **Redis:** [Upstash](https://upstash.com) free plan (use the `rediss://` TCP URL).
 - **Gateway:** deploy `packages/gateway` to Vercel (root directory `packages/gateway`; `api/index.ts` + `vercel.json` are included).
-  Env vars: `DATABASE_URL`, `REDIS_URL`, `MASTER_ENCRYPTION_KEY`, `ADMIN_API_KEY`, `NODE_ENV=production`, optional `ALLOWED_ORIGINS`.
+  Env vars: `DATABASE_URL`, `REDIS_URL`, `MASTER_ENCRYPTION_KEY`, `ADMIN_API_KEY`, `NODE_ENV=production`, `ALLOWED_ORIGINS` (your dashboard URL; required for the dashboard to work in production).
 - **Dashboard:** deploy `packages/dashboard` to Vercel (root directory `packages/dashboard`). Env var: `NEXT_PUBLIC_API_URL` = your gateway URL.
 - Run `npm run db:push` once against the production `DATABASE_URL`.
