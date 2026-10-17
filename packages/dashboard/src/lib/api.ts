@@ -1,7 +1,9 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-// Default key matching gateway .env for zero-config out-of-the-box local development
-export const DEFAULT_ADMIN_KEY = 'dvai_admin_c8f2e9a1b4d7f0e3c6a9d2b5e8f1a4c7d0e3b6a9f2c5d8';
+// No admin key is hardcoded: enter it on the Settings page (stored in this
+// browser only). NEXT_PUBLIC_ADMIN_API_KEY is supported for local development,
+// but it is embedded in the client bundle, so never set it on a public deploy.
+export const DEFAULT_ADMIN_KEY = '';
 
 export function getAdminKey(): string {
   if (typeof window !== 'undefined') {
