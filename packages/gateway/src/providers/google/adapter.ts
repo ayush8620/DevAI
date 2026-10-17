@@ -7,43 +7,77 @@ export class GoogleProvider extends BaseProvider {
   }
 
   async chat(request: ChatRequest, apiKey: string): Promise<ChatResponse> {
-    const contents = request.messages.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }));
+    // Gemini has no "system" role: send system messages as systemInstruction.
+    const systemText = request.messages
+      .filter(m => m.role === 'system')
+      .map(m => m.content)
+      .join('\n\n');
 
-    const geminiReq = { contents };
+    const contents = request.messages
+      .filter(m => m.role !== 'system')
+      .map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
 
-    const res = await this.fetchWithTimeout(`${this.baseUrl}/models/${request.model}:generateContent?key=${apiKey}`, {
+    const generationConfig: Record<string, unknown> = {};
+    if (request.temperature !== undefined) generationConfig.temperature = request.temperature;
+    if (request.max_tokens !== undefined) generationConfig.maxOutputTokens = request.max_tokens;
+    if (request.top_p !== undefined) generationConfig.topP = request.top_p;
+    if (request.stop !== undefined) {
+      generationConfig.stopSequences = Array.isArray(request.stop) ? request.stop : [request.stop];
+    }
+
+    const geminiReq: Record<string, unknown> = { contents };
+    if (systemText) geminiReq.systemInstruction = { parts: [{ text: systemText }] };
+    if (Object.keys(generationConfig).length) geminiReq.generationConfig = generationConfig;
+
+    const res = await this.fetchWithTimeout(`${this.baseUrl}/models/${encodeURIComponent(request.model)}:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiReq)
-    });
+      // Send the key as a header so it never ends up in URLs/logs.
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(geminiReq),
+    }, 60000);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Google error ${res.status}`);
+      const e: any = new Error(err.error?.message || `Google error ${res.status}`);
+      e.status = res.status;
+      throw e;
     }
 
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const candidate = data.candidates?.[0];
+    const text = (candidate?.content?.parts || [])
+      .filter((p: any) => typeof p.text === 'string' && !p.thought)
+      .map((p: any) => p.text)
+      .join('');
+    const usage = data.usageMetadata || {};
+    const promptTokens = usage.promptTokenCount || 0;
+    const totalTokens = usage.totalTokenCount || 0;
 
     return {
       id: `chatcmpl-${Date.now()}`,
       object: 'chat.completion',
       created: Date.now() / 1000 | 0,
-      model: request.model,
+      model: data.modelVersion || request.model,
       choices: [{
         index: 0,
         message: { role: 'assistant', content: text },
-        finish_reason: 'stop'
+        finish_reason: candidate?.finishReason === 'MAX_TOKENS' ? 'length' : 'stop',
       }],
-      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+      usage: {
+        prompt_tokens: promptTokens,
+        completion_tokens: Math.max(totalTokens - promptTokens, 0),
+        total_tokens: totalTokens,
+      },
     };
   }
 
   async listModels(apiKey: string): Promise<ModelInfo[]> {
-    const res = await this.fetchWithTimeout(`${this.baseUrl}/models?key=${apiKey}`);
+    const res = await this.fetchWithTimeout(`${this.baseUrl}/models?pageSize=1000`, {
+      headers: { 'x-goog-api-key': apiKey },
+    });
     if (!res.ok) throw new Error(`Failed to list Google models: ${res.status}`);
     const data = await res.json();
     return data.models
