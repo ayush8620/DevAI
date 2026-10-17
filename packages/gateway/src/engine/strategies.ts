@@ -1,8 +1,8 @@
-import { AIProvider } from '../providers/base.js';
+import { AIProvider, ChatStreamChunk } from '../providers/base.js';
 import { ChatRequest, ChatResponse, RoutingMode } from '../types/index.js';
-import { CircuitStore, shouldTripCircuit, cooldownFor, errorStatus } from './circuit.js';
+import { CircuitStore, classifyFailure, errorStatus, FailureClass } from './circuit.js';
 
-/** One concrete place a request can go: provider + credential + model. */
+/** One concrete place a request can go: provider + credential (API key) + model. */
 export interface RouteTarget {
   provider: AIProvider;
   providerId: string;
@@ -10,6 +10,10 @@ export interface RouteTarget {
   credentialId: string;
   apiKey: string;
   model: string;
+  /** Masked key for headers/metadata, e.g. "AIza…DyMg" */
+  keyHint?: string;
+  /** Credential name set in the dashboard */
+  keyName?: string;
 }
 
 export type CandidateStatus = 'success' | 'error' | 'timeout' | 'aborted' | 'skipped';
@@ -25,6 +29,8 @@ export interface CandidateResult {
   error?: string;
   httpStatus?: number | null;
   response?: ChatResponse;
+  keyHint?: string;
+  keyName?: string;
 }
 
 export interface JudgeDecision {
@@ -44,6 +50,8 @@ export interface StrategyOptions {
   overallTimeoutMs?: number;
   judge?: Judge;
   onRateLimited?: (target: RouteTarget) => Promise<void>;
+  /** Called after every failed key attempt (used to record the key's last error) */
+  onKeyFailure?: (target: RouteTarget, failure: FailureClass, err: any) => void;
 }
 
 export interface RouteOutcome {
@@ -51,8 +59,25 @@ export interface RouteOutcome {
   response: ChatResponse;
   selected: CandidateResult;
   candidates: CandidateResult[];
+  /** Providers (provider+model groups) that failed before the answer */
   fallbacks: number;
+  /** Extra API keys tried inside the selected provider before it answered */
+  keyFallbacks: number;
   decision?: JudgeDecision;
+}
+
+/** A started stream: chunks already pulled (until the first text) plus the rest. */
+export interface OpenStream {
+  buffered: ChatStreamChunk[];
+  rest: AsyncGenerator<ChatStreamChunk>;
+  /** Stop the upstream call */
+  close: () => void;
+}
+
+export interface StreamOutcome extends Omit<RouteOutcome, 'response'> {
+  stream: OpenStream;
+  /** Set when the stream was synthesised from a full answer (mode best) */
+  response?: ChatResponse;
 }
 
 export class AllProvidersFailedError extends Error {
@@ -63,8 +88,17 @@ export class AllProvidersFailedError extends Error {
   }
 }
 
+/** Circuit for one key+model (provider/model outage seen through this key). */
 export function circuitKey(t: RouteTarget) {
   return `${t.credentialId}:${t.model}`;
+}
+/** Circuit for one API key across all models (rate limit, invalid key, quota). */
+export function keyCircuitKey(t: { credentialId: string }) {
+  return `key:${t.credentialId}`;
+}
+
+export async function isTargetOpen(t: RouteTarget, circuit: CircuitStore) {
+  return (await circuit.isOpen(keyCircuitKey(t))) || (await circuit.isOpen(circuitKey(t)));
 }
 
 function base(t: RouteTarget): Omit<CandidateResult, 'status' | 'latencyMs'> {
@@ -74,13 +108,36 @@ function base(t: RouteTarget): Omit<CandidateResult, 'status' | 'latencyMs'> {
     providerType: t.provider.type,
     credentialId: t.credentialId,
     model: t.model,
+    keyHint: t.keyHint,
+    keyName: t.keyName,
   };
+}
+
+/** Targets that share provider+model; each entry is one API key, in the order to try them. */
+export interface TargetGroup {
+  key: string;
+  targets: RouteTarget[];
+}
+
+export function groupTargets(targets: RouteTarget[]): TargetGroup[] {
+  const groups = new Map<string, TargetGroup>();
+  for (const t of targets) {
+    const k = `${t.providerId}:${t.model}`;
+    if (!groups.has(k)) groups.set(k, { key: k, targets: [] });
+    const g = groups.get(k)!;
+    if (!g.targets.some(x => x.credentialId === t.credentialId)) g.targets.push(t);
+  }
+  return [...groups.values()];
+}
+
+function stripDevai(request: ChatRequest): ChatRequest {
+  const { devai: _ignored, ...clean } = request;
+  return clean;
 }
 
 /** Call one target; empty answers count as failures. */
 async function callTarget(t: RouteTarget, request: ChatRequest, opts: StrategyOptions, signal?: AbortSignal): Promise<ChatResponse> {
-  const { devai: _ignored, ...clean } = request;
-  const res = await t.provider.chat({ ...clean, model: t.model }, t.apiKey, { signal, timeoutMs: opts.timeoutMs });
+  const res = await t.provider.chat({ ...stripDevai(request), stream: false, model: t.model }, t.apiKey, { signal, timeoutMs: opts.timeoutMs });
   const text = res?.choices?.[0]?.message?.content;
   if (typeof text !== 'string' || !text.trim()) {
     const e: any = new Error('Provider returned an empty response');
@@ -90,9 +147,67 @@ async function callTarget(t: RouteTarget, request: ChatRequest, opts: StrategyOp
   return res;
 }
 
-async function onFailure(t: RouteTarget, err: any, opts: StrategyOptions) {
-  if (shouldTripCircuit(err)) await opts.circuit.trip(circuitKey(t), cooldownFor(err));
+/** Turn a full response into a one-chunk stream (cache hits, best mode, adapters without streaming). */
+export function responseToStream(res: ChatResponse): OpenStream {
+  const chunk: ChatStreamChunk = {
+    delta: res.choices?.[0]?.message?.content ?? '',
+    finishReason: res.choices?.[0]?.finish_reason ?? 'stop',
+    usage: res.usage,
+    model: res.model,
+  };
+  return { buffered: [chunk], rest: (async function* () {})(), close: () => {} };
+}
+
+/**
+ * Open a stream and wait for the first chunk with text, so failover can still happen
+ * before anything is sent to the client. Empty streams count as failures.
+ */
+async function openTargetStream(t: RouteTarget, request: ChatRequest, opts: StrategyOptions, signal?: AbortSignal): Promise<OpenStream> {
+  const req = { ...stripDevai(request), stream: true, model: t.model };
+  if (!t.provider.chatStream) {
+    return responseToStream(await callTarget(t, request, opts, signal));
+  }
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(signal?.reason);
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const it = t.provider.chatStream(req, t.apiKey, { signal: controller.signal, timeoutMs: opts.timeoutMs });
+  const buffered: ChatStreamChunk[] = [];
+  try {
+    while (true) {
+      const { done, value } = await it.next();
+      if (done) break;
+      buffered.push(value);
+      if (value.delta) break;
+    }
+  } catch (err) {
+    controller.abort();
+    signal?.removeEventListener('abort', onAbort);
+    throw err;
+  }
+  if (!buffered.some(c => c.delta.trim())) {
+    controller.abort();
+    signal?.removeEventListener('abort', onAbort);
+    const e: any = new Error('Provider returned an empty response');
+    e.status = 502;
+    throw e;
+  }
+  return {
+    buffered,
+    rest: it,
+    close: () => { controller.abort(); signal?.removeEventListener('abort', onAbort); it.return?.(undefined).catch(() => {}); },
+  };
+}
+
+async function onFailure(t: RouteTarget, err: any, opts: StrategyOptions): Promise<FailureClass> {
+  const f = classifyFailure(err);
+  if (f.scope === 'key') await opts.circuit.trip(keyCircuitKey(t), f.cooldownSec);
+  else if (f.scope === 'model') await opts.circuit.trip(circuitKey(t), f.cooldownSec);
   if (errorStatus(err) === 429 && opts.onRateLimited) await opts.onRateLimited(t).catch(() => {});
+  try { opts.onKeyFailure?.(t, f, err); } catch { /* ignore */ }
+  return f;
 }
 
 function failure(t: RouteTarget, err: any, start: number, aborted = false): CandidateResult {
@@ -106,70 +221,108 @@ function failure(t: RouteTarget, err: any, start: number, aborted = false): Cand
   };
 }
 
-/** Drop targets whose circuit is open; they are reported as skipped. */
-async function partition(targets: RouteTarget[], opts: StrategyOptions) {
-  const live: RouteTarget[] = [];
-  const skipped: CandidateResult[] = [];
-  for (const t of targets) {
-    if (await opts.circuit.isOpen(circuitKey(t))) {
-      skipped.push({ ...base(t), status: 'skipped', latencyMs: 0, error: 'circuit open (recent failure, cooling down)' });
-    } else live.push(t);
-  }
-  return { live, skipped };
-}
+class GroupFailedError extends Error {}
 
-/** single: try targets in priority order until one answers. */
-export async function runSingle(targets: RouteTarget[], request: ChatRequest, opts: StrategyOptions): Promise<RouteOutcome> {
-  const { live, skipped } = await partition(targets, opts);
-  const candidates: CandidateResult[] = [...skipped];
-  let fallbacks = 0;
-  for (const t of live) {
+/**
+ * Try one provider+model with each of its keys in order. A failing key is cooled down
+ * on its own and the same request is retried with the next key.
+ */
+async function callGroup<R>(
+  g: TargetGroup, opts: StrategyOptions, attempts: CandidateResult[], signal: AbortSignal | undefined,
+  call: (t: RouteTarget, signal?: AbortSignal) => Promise<R>,
+): Promise<{ target: RouteTarget; result: R; latencyMs: number; keyFallbacks: number; attemptIndex: number }> {
+  let keyFallbacks = 0;
+  for (const t of g.targets) {
+    if (signal?.aborted) throw signal.reason ?? new Error('aborted');
+    if (await isTargetOpen(t, opts.circuit)) {
+      attempts.push({ ...base(t), status: 'skipped', latencyMs: 0, error: 'key cooling down (recent failure)' });
+      continue;
+    }
     const start = Date.now();
     try {
-      const response = await callTarget(t, request, opts);
-      const selected: CandidateResult = { ...base(t), status: 'success', latencyMs: Date.now() - start, response };
-      candidates.push(selected);
-      return { mode: 'single', response, selected, candidates, fallbacks };
+      const result = await call(t, signal);
+      return { target: t, result, latencyMs: Date.now() - start, keyFallbacks, attemptIndex: attempts.length };
     } catch (err: any) {
-      candidates.push(failure(t, err, start));
-      await onFailure(t, err, opts);
-      fallbacks++;
+      if (signal?.aborted) throw err;
+      attempts.push(failure(t, err, start));
+      const f = await onFailure(t, err, opts);
+      keyFallbacks++;
+      if (!f.tryNextKey) break;
+    }
+  }
+  throw new GroupFailedError();
+}
+
+/** single: provider groups in priority order; inside each, keys in order, until one answers. */
+async function runSequential<R>(targets: RouteTarget[], opts: StrategyOptions, call: (t: RouteTarget, signal?: AbortSignal) => Promise<R>) {
+  const candidates: CandidateResult[] = [];
+  let fallbacks = 0;
+  for (const g of groupTargets(targets)) {
+    try {
+      const r = await callGroup(g, opts, candidates, undefined, call);
+      const selected: CandidateResult = { ...base(r.target), status: 'success', latencyMs: r.latencyMs };
+      candidates.push(selected);
+      return { selected, result: r.result, candidates, fallbacks, keyFallbacks: r.keyFallbacks };
+    } catch (err) {
+      if (!(err instanceof GroupFailedError)) throw err;
+      if (candidates.some(c => c.providerId === g.targets[0].providerId && c.status !== 'skipped')) fallbacks++;
     }
   }
   throw new AllProvidersFailedError(candidates);
 }
 
-/** Run all live targets concurrently. `stopOnFirst` aborts the rest once one succeeds. */
-async function fanOut(targets: RouteTarget[], request: ChatRequest, opts: StrategyOptions, stopOnFirst: boolean) {
-  const { live, skipped } = await partition(targets, opts);
-  const results: CandidateResult[] = new Array(live.length);
-  const controllers = live.map(() => new AbortController());
+export async function runSingle(targets: RouteTarget[], request: ChatRequest, opts: StrategyOptions): Promise<RouteOutcome> {
+  const r = await runSequential(targets, opts, (t, s) => callTarget(t, request, opts, s));
+  r.selected.response = r.result;
+  return { mode: 'single', response: r.result, selected: r.selected, candidates: r.candidates, fallbacks: r.fallbacks, keyFallbacks: r.keyFallbacks };
+}
+
+interface GroupResult<R> {
+  attempts: CandidateResult[];
+  selected?: CandidateResult;
+  result?: R;
+  keyFallbacks: number;
+}
+
+/** Run all provider groups concurrently (each with its own key failover). `stopOnFirst` cancels the rest once one succeeds. */
+async function fanOut<R>(
+  targets: RouteTarget[], opts: StrategyOptions, stopOnFirst: boolean,
+  call: (t: RouteTarget, signal?: AbortSignal) => Promise<R>, dispose?: (r: R) => void,
+) {
+  const groups = groupTargets(targets);
+  const out: GroupResult<R>[] = groups.map(() => ({ attempts: [], keyFallbacks: 0 }));
+  const finished: boolean[] = groups.map(() => false);
+  const controllers = groups.map(() => new AbortController());
   const overall = opts.overallTimeoutMs ?? opts.timeoutMs;
   let winner: number | null = null;
 
   await new Promise<void>((resolve) => {
-    let pending = live.length;
+    let pending = groups.length;
     if (!pending) return resolve();
     const timer = setTimeout(() => {
       controllers.forEach((c, i) => {
-        if (!results[i]) c.abort(new Error('overall timeout'));
+        if (!finished[i]) c.abort(Object.assign(new Error(`timeout after ${overall}ms (overall)`), { name: 'TimeoutError' }));
       });
     }, overall);
     const done = () => {
       if (--pending === 0) { clearTimeout(timer); resolve(); }
     };
-    live.forEach((t, i) => {
-      const start = Date.now();
-      callTarget(t, request, opts, controllers[i].signal)
-        .then((response) => {
-          if (results[i]) return; // already marked aborted
-          results[i] = { ...base(t), status: 'success', latencyMs: Date.now() - start, response };
+    groups.forEach((g, i) => {
+      const startAll = Date.now();
+      callGroup(g, opts, out[i].attempts, controllers[i].signal, call)
+        .then((r) => {
+          if (finished[i]) { dispose?.(r.result); return; } // already cancelled
+          finished[i] = true;
+          out[i].selected = { ...base(r.target), status: 'success', latencyMs: r.latencyMs };
+          out[i].result = r.result;
+          out[i].keyFallbacks = r.keyFallbacks;
           if (stopOnFirst && winner === null) {
             winner = i;
             controllers.forEach((c, j) => {
-              if (j !== i && !results[j]) {
-                results[j] = failure(live[j], null, start, true);
-                results[j].latencyMs = Date.now() - start;
+              if (j !== i && !finished[j]) {
+                finished[j] = true;
+                const t = groups[j].targets.find(x => !out[j].attempts.some(a => a.credentialId === x.credentialId)) ?? groups[j].targets[0];
+                out[j].attempts.push({ ...failure(t, null, startAll, true), latencyMs: Date.now() - startAll });
                 c.abort(new Error('cancelled'));
               }
             });
@@ -177,26 +330,35 @@ async function fanOut(targets: RouteTarget[], request: ChatRequest, opts: Strate
             resolve(); // don't wait for cancelled calls to settle
           }
         })
-        .catch(async (err) => {
-          if (results[i]) return; // aborted because another won
-          const overallTimeout = controllers[i].signal.aborted;
-          results[i] = failure(t, overallTimeout ? Object.assign(new Error(`timeout after ${overall}ms (overall)`), { name: 'TimeoutError' }) : err, start);
-          if (!overallTimeout) await onFailure(t, err, opts);
+        .catch((err) => {
+          if (finished[i]) return; // cancelled because another won
+          finished[i] = true;
+          const sig = controllers[i].signal;
+          if (sig.aborted && !(err instanceof GroupFailedError)) {
+            // overall timeout hit while a key was in flight
+            const t = groups[i].targets.find(x => !out[i].attempts.some(a => a.credentialId === x.credentialId)) ?? groups[i].targets[0];
+            out[i].attempts.push(failure(t, sig.reason, startAll));
+          }
         })
         .finally(done);
     });
   });
 
-  return { skipped, results: results.map((r, i) => r ?? failure(live[i], new Error('no result'), Date.now())), winner };
+  return { groups: out, winner };
+}
+
+function flatten<R>(groups: GroupResult<R>[]): CandidateResult[] {
+  return groups.flatMap(g => (g.selected ? [...g.attempts, g.selected] : g.attempts));
 }
 
 /** fastest: first valid answer wins; slower calls are aborted. */
 export async function runFastest(targets: RouteTarget[], request: ChatRequest, opts: StrategyOptions): Promise<RouteOutcome> {
-  const { skipped, results, winner } = await fanOut(targets, request, opts, true);
-  const candidates = [...results, ...skipped];
+  const { groups, winner } = await fanOut(targets, opts, true, (t, s) => callTarget(t, request, opts, s));
+  const candidates = flatten(groups);
   if (winner === null) throw new AllProvidersFailedError(candidates);
-  const selected = results[winner];
-  return { mode: 'fastest', response: selected.response!, selected, candidates, fallbacks: 0 };
+  const w = groups[winner];
+  w.selected!.response = w.result!;
+  return { mode: 'fastest', response: w.result!, selected: w.selected!, candidates, fallbacks: 0, keyFallbacks: w.keyFallbacks };
 }
 
 /** Heuristic used when no judge is available: prefer complete answers, then longer ones. */
@@ -214,9 +376,11 @@ export function heuristicPick(candidates: CandidateResult[]): JudgeDecision {
 
 /** best: wait for all (bounded by overall timeout), then let the judge choose. */
 export async function runBest(targets: RouteTarget[], request: ChatRequest, opts: StrategyOptions): Promise<RouteOutcome> {
-  const { skipped, results } = await fanOut(targets, request, opts, false);
-  const candidates = [...results, ...skipped];
-  const ok = results.filter(r => r.status === 'success');
+  const { groups } = await fanOut(targets, opts, false, (t, s) => callTarget(t, request, opts, s));
+  for (const g of groups) if (g.selected) g.selected.response = g.result;
+  const candidates = flatten(groups);
+  const okGroups = groups.filter(g => g.selected);
+  const ok = okGroups.map(g => g.selected!);
   if (!ok.length) throw new AllProvidersFailedError(candidates);
 
   let decision: JudgeDecision;
@@ -233,11 +397,34 @@ export async function runBest(targets: RouteTarget[], request: ChatRequest, opts
     decision = heuristicPick(ok);
   }
   const selected = ok[decision.index];
-  return { mode: 'best', response: selected.response!, selected, candidates, fallbacks: 0, decision };
+  return { mode: 'best', response: selected.response!, selected, candidates, fallbacks: 0, keyFallbacks: okGroups[decision.index].keyFallbacks, decision };
 }
 
 export function runStrategy(mode: RoutingMode, targets: RouteTarget[], request: ChatRequest, opts: StrategyOptions) {
   if (mode === 'fastest') return runFastest(targets, request, opts);
   if (mode === 'best') return runBest(targets, request, opts);
   return runSingle(targets, request, opts);
+}
+
+/**
+ * Streaming:
+ *  - single: key/provider failover until a stream produces its first text (nothing is sent before that)
+ *  - fastest: all providers race; the first to produce text streams, the others are cancelled
+ *  - best: needs every full answer for the judge, so the chosen answer is sent as one chunk
+ */
+export async function runStream(mode: RoutingMode, targets: RouteTarget[], request: ChatRequest, opts: StrategyOptions): Promise<StreamOutcome> {
+  if (mode === 'best') {
+    const r = await runBest(targets, request, opts);
+    return { ...r, stream: responseToStream(r.response) };
+  }
+  const open = (t: RouteTarget, s?: AbortSignal) => openTargetStream(t, request, opts, s);
+  if (mode === 'fastest') {
+    const { groups, winner } = await fanOut(targets, opts, true, open, (s) => s.close());
+    const candidates = flatten(groups);
+    if (winner === null) throw new AllProvidersFailedError(candidates);
+    const w = groups[winner];
+    return { mode, stream: w.result!, selected: w.selected!, candidates, fallbacks: 0, keyFallbacks: w.keyFallbacks };
+  }
+  const r = await runSequential(targets, opts, open);
+  return { mode: 'single', stream: r.result, selected: r.selected, candidates: r.candidates, fallbacks: r.fallbacks, keyFallbacks: r.keyFallbacks };
 }

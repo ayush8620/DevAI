@@ -10,8 +10,12 @@ import { cacheGet, cacheSet } from '../cache/redis.js';
 import { circuitStore } from './circuit.js';
 import { logger } from '../middleware/logger.js';
 import {
-  RouteTarget, RouteOutcome, CandidateResult, Judge, AllProvidersFailedError, runStrategy,
+  RouteTarget, RouteOutcome, CandidateResult, Judge, AllProvidersFailedError, runStrategy, runStream, StreamOutcome,
+  groupTargets, isTargetOpen, StrategyOptions,
 } from './strategies.js';
+import { KeyStrategy, isKeyStrategy, orderKeys, maskSecret } from './keys.js';
+import { getKeyUsage, nextRoundRobin } from './key-usage.js';
+import { FailureClass } from './circuit.js';
 
 export { AllProvidersFailedError } from './strategies.js';
 
@@ -20,19 +24,22 @@ const MAX_PARALLEL = 5;
 
 export interface ResolvedRouting {
   mode: RoutingMode;
+  /** Explicit key strategy for this request/app; otherwise each provider's own setting applies */
+  keyStrategy?: KeyStrategy;
   providers?: TargetSpec[];
   judge?: TargetSpec;
   timeoutMs: number;
 }
 
 /** Precedence: request body `devai` > `x-devai-mode` header > project defaults > single. */
-export function resolveRouting(request: ChatRequest, projectRouting: unknown, headerMode?: string | null): ResolvedRouting {
+export function resolveRouting(request: ChatRequest, projectRouting: unknown, headerMode?: string | null, headerKeyStrategy?: string | null): ResolvedRouting {
   const parsed = RoutingConfigSchema.safeParse(projectRouting ?? {});
   const project: RoutingConfig = parsed.success ? parsed.data : {};
   const req = request.devai ?? {};
   const header = headerMode && (ROUTING_MODES as readonly string[]).includes(headerMode) ? (headerMode as RoutingMode) : undefined;
   return {
     mode: req.mode ?? header ?? project.mode ?? 'single',
+    keyStrategy: req.keyStrategy ?? (isKeyStrategy(headerKeyStrategy) ? headerKeyStrategy : undefined) ?? project.keyStrategy,
     providers: req.providers ?? project.providers,
     judge: req.judge ?? project.judge,
     timeoutMs: req.timeoutMs ?? project.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -50,8 +57,11 @@ type CredentialRow = typeof providerCredentials.$inferSelect;
 
 async function loadPool() {
   const allProviders = await db.select().from(providers).where(eq(providers.status, 'active'));
-  const allCredentials = await db.select().from(providerCredentials)
-    .where(and(eq(providerCredentials.enabled, true), eq(providerCredentials.status, 'active')));
+  // Keys that failed a test ('error') stay in the pool: routing cools them down on
+  // failure and they recover automatically. Only disabled/revoked keys are excluded.
+  const allCredentials = (await db.select().from(providerCredentials)
+    .where(eq(providerCredentials.enabled, true)))
+    .filter(c => !['disabled', 'revoked'].includes(String(c.status ?? 'active')));
   return { allProviders, allCredentials };
 }
 
@@ -64,28 +74,55 @@ function matchProvider(all: ProviderRow[], ref: string): ProviderRow[] {
   return all.filter(p => p.type.toLowerCase() === r);
 }
 
+/** Which key strategy applies to a provider: request/app override, else the provider's setting, else failover. */
+export function keyStrategyFor(p: Pick<ProviderRow, 'config'>, override?: KeyStrategy): KeyStrategy {
+  if (override) return override;
+  const fromConfig = (p.config as any)?.keyStrategy;
+  return isKeyStrategy(fromConfig) ? fromConfig : 'failover';
+}
+
 /**
- * Turn provider rows + credentials into targets, dropping credentials that are
- * rate-limited, out of quota, or whose provider failed its last health check.
+ * Turn provider rows + credentials into targets. Keys of one provider are ordered by
+ * the key strategy; keys that are rate-limited, out of quota, failed their last
+ * health check or are cooling down are reported as skipped (other keys still work).
  */
-async function toTargets(pairs: { p: ProviderRow; model: string }[], creds: CredentialRow[], skipped: CandidateResult[]): Promise<RouteTarget[]> {
+async function toTargets(pairs: { p: ProviderRow; model: string }[], creds: CredentialRow[], skipped: CandidateResult[], routing: ResolvedRouting): Promise<RouteTarget[]> {
   const out: RouteTarget[] = [];
   for (const { p, model } of pairs) {
-    const health = await cacheGet(`health:${p.id}`);
-    for (const cred of creds.filter(c => c.providerId === p.id)) {
-      const info = { providerId: p.id, providerName: p.name, providerType: p.type, credentialId: cred.id, model, latencyMs: 0 };
-      if (health === 'unhealthy') { skipped.push({ ...info, status: 'skipped', error: 'provider marked unhealthy by health check' }); continue; }
-      if (await cacheGet(`ratelimit:${cred.id}`)) { skipped.push({ ...info, status: 'skipped', error: 'rate limited (cooling down)' }); continue; }
-      if (!(await checkQuota(cred.id))) { skipped.push({ ...info, status: 'skipped', error: 'quota exhausted' }); continue; }
-      out.push({
+    const providerCreds = creds.filter(c => c.providerId === p.id)
+      .sort((a, b) => (a.createdAt?.getTime?.() ?? 0) - (b.createdAt?.getTime?.() ?? 0));
+    const usable: RouteTarget[] = [];
+    for (const cred of providerCreds) {
+      let apiKey: string;
+      try { apiKey = decrypt({ ciphertext: cred.encryptedKey, iv: cred.iv, authTag: cred.authTag }); } catch { continue; }
+      const t: RouteTarget = {
         provider: createProvider(p.type, p.id, p.name, p.baseUrl || undefined),
         providerId: p.id,
         providerName: p.name,
         credentialId: cred.id,
-        apiKey: decrypt({ ciphertext: cred.encryptedKey, iv: cred.iv, authTag: cred.authTag }),
+        apiKey,
         model,
-      });
+        keyHint: maskSecret(apiKey),
+        keyName: cred.name,
+      };
+      const info = { providerId: p.id, providerName: p.name, providerType: p.type, credentialId: cred.id, model, latencyMs: 0, keyHint: t.keyHint, keyName: cred.name };
+      if ((await cacheGet(`health:key:${cred.id}`)) === 'unhealthy') { skipped.push({ ...info, status: 'skipped', error: 'key failed its last health check' }); continue; }
+      if (await cacheGet(`ratelimit:${cred.id}`)) { skipped.push({ ...info, status: 'skipped', error: 'rate limited (cooling down)' }); continue; }
+      if (!(await checkQuota(cred.id))) { skipped.push({ ...info, status: 'skipped', error: 'quota exhausted' }); continue; }
+      usable.push(t);
     }
+    if (!usable.length) continue;
+    const strategy = keyStrategyFor(p, routing.keyStrategy);
+    const cooling = new Set<string>();
+    for (const t of usable) if (await isTargetOpen(t, circuitStore)) cooling.add(t.credentialId);
+    const healthyCount = usable.length - cooling.size;
+    const ordered = orderKeys(usable, strategy, {
+      priority: Array.isArray((p.config as any)?.keyOrder) ? (p.config as any).keyOrder : [],
+      cooling,
+      counter: strategy === 'round_robin' && healthyCount > 1 ? await nextRoundRobin(p.id) : 0,
+      usage: strategy === 'least_used' ? await getKeyUsage(usable.map(t => t.credentialId)) : undefined,
+    });
+    out.push(...ordered);
   }
   return out;
 }
@@ -106,7 +143,7 @@ export async function buildTargets(request: ChatRequest, routing: ResolvedRoutin
       }
     }
     if (!pairs.length) throw new RoutingError('None of the requested providers exist or are active', 'no_eligible_providers');
-    return { targets: await toTargets(pairs, allCredentials, skipped), skipped };
+    return { targets: await toTargets(pairs, allCredentials, skipped, routing), skipped };
   }
 
   // Automatic: every provider that supports the model, ordered by configured priority then recent latency
@@ -115,17 +152,20 @@ export async function buildTargets(request: ChatRequest, routing: ResolvedRoutin
     if (request.model !== 'auto' && !(await isModelSupported(p.type, request.model, p.id))) continue;
     pairs.push({ p, model: resolveModelForProvider(p.type, request.model) });
   }
-  const targets = await toTargets(pairs, allCredentials, skipped);
-  const scored = scoreCandidates(await Promise.all(targets.map(async t => {
-    const p = allProviders.find(x => x.id === t.providerId)!;
+  const targets = await toTargets(pairs, allCredentials, skipped, routing);
+  // Order providers (configured priority, then best recent latency of any key); keys keep their strategy order.
+  const groups = groupTargets(targets);
+  const scored = scoreCandidates(await Promise.all(groups.map(async g => {
+    const p = allProviders.find(x => x.id === g.targets[0].providerId)!;
     const priority = Number((p.config as any)?.priority ?? 0) || 0;
-    const latency = Number(await cacheGet(`latency:${t.credentialId}`)) || 0;
+    const latencies = (await Promise.all(g.targets.map(t => cacheGet(`latency:${t.credentialId}`)))).map(Number).filter(n => n > 0);
+    const t0 = g.targets[0];
     return {
-      id: t.credentialId, provider: t.provider, providerId: t.providerId, credentialId: t.credentialId,
-      decryptedKey: t.apiKey, quotaRemaining: 100, recentLatencyMs: latency, errorRate: 0, priority,
+      id: g.key, provider: t0.provider, providerId: t0.providerId, credentialId: t0.credentialId,
+      decryptedKey: '', quotaRemaining: 100, recentLatencyMs: latencies.length ? Math.min(...latencies) : 0, errorRate: 0, priority,
     };
   })));
-  return { targets: scored.map(s => targets.find(t => t.credentialId === s.credentialId && t.providerId === s.providerId)!), skipped };
+  return { targets: scored.flatMap(s => groups.find(g => g.key === s.id)!.targets), skipped };
 }
 
 const JUDGE_SYSTEM = 'You are an impartial judge. Compare the candidate answers to the user request and pick the most accurate, complete and helpful one. Reply with JSON only, no markdown: {"best": <candidate number>, "reason": "<one short sentence>"}';
@@ -165,30 +205,11 @@ export function makeLlmJudge(target: RouteTarget, timeoutMs: number): Judge {
 export async function routeRequest(
   request: ChatRequest,
   projectId: string,
-  options: { projectRouting?: unknown; headerMode?: string | null } = {},
+  options: RouteOptions = {},
 ): Promise<RouteOutcome & { routing: ResolvedRouting }> {
-  const routing = resolveRouting(request, options.projectRouting, options.headerMode);
-  let { targets, skipped } = await buildTargets(request, routing);
-  if (routing.mode !== 'single') targets = dedupeTargets(targets).slice(0, MAX_PARALLEL);
-
-  let judge: Judge | undefined;
-  if (routing.mode === 'best' && targets.length > 1) {
-    let judgeTarget = targets[0];
-    if (routing.judge) {
-      const { targets: jt } = await buildTargets({ ...request, model: 'auto' }, { ...routing, providers: [routing.judge] });
-      if (jt[0]) judgeTarget = jt[0];
-    }
-    judge = makeLlmJudge(judgeTarget, routing.timeoutMs);
-  }
-
+  const { routing, targets, skipped, judge, strategyOpts } = await prepare(request, options);
   try {
-    const outcome = await runStrategy(routing.mode, targets, request, {
-      circuit: circuitStore,
-      timeoutMs: routing.timeoutMs,
-      overallTimeoutMs: routing.timeoutMs + 5000,
-      judge,
-      onRateLimited: (t) => cacheSet(`ratelimit:${t.credentialId}`, '1', 60),
-    });
+    const outcome = await runStrategy(routing.mode, targets, request, strategyOpts);
     outcome.candidates.push(...skipped);
     cacheSet(`latency:${outcome.selected.credentialId}`, String(outcome.selected.latencyMs), 300).catch(() => {});
     return { ...outcome, routing };
@@ -201,14 +222,67 @@ export async function routeRequest(
   }
 }
 
-function dedupeTargets(targets: RouteTarget[]): RouteTarget[] {
-  const seen = new Set<string>();
-  return targets.filter(t => {
-    const k = `${t.providerId}:${t.model}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+/** Same as routeRequest but returns an open stream (failover happens before the first byte). */
+export async function routeStreamRequest(
+  request: ChatRequest,
+  projectId: string,
+  options: RouteOptions = {},
+): Promise<StreamOutcome & { routing: ResolvedRouting }> {
+  const { routing, targets, skipped, strategyOpts } = await prepare(request, options);
+  try {
+    const outcome = await runStream(routing.mode, targets, request, strategyOpts);
+    outcome.candidates.push(...skipped);
+    return { ...outcome, routing };
+  } catch (err) {
+    if (err instanceof AllProvidersFailedError) {
+      err.candidates.push(...skipped);
+      logger.warn({ projectId, mode: routing.mode, attempts: err.candidates.length, stream: true }, 'All providers failed');
+    }
+    throw err;
+  }
+}
+
+export interface RouteOptions {
+  projectRouting?: unknown;
+  headerMode?: string | null;
+  headerKeyStrategy?: string | null;
+}
+
+/** Remember a key's last error so the dashboard can show it (best effort, non-blocking). */
+function noteKeyFailure(t: RouteTarget, f: FailureClass, err: any) {
+  const msg = `${f.kind}: ${String(err?.message || err).slice(0, 200)}`;
+  cacheSet(`keyerr:${t.credentialId}`, JSON.stringify({ kind: f.kind, message: msg, at: Date.now(), cooldownSec: f.cooldownSec }), 3600).catch(() => {});
+  db.update(providerCredentials).set({ lastError: msg, updatedAt: new Date() })
+    .where(eq(providerCredentials.id, t.credentialId)).catch(() => {});
+}
+
+async function prepare(request: ChatRequest, options: RouteOptions) {
+  const routing = resolveRouting(request, options.projectRouting, options.headerMode, options.headerKeyStrategy);
+  let { targets, skipped } = await buildTargets(request, routing);
+  if (routing.mode !== 'single') {
+    // Parallel modes fan out over providers (max 5); each keeps all its keys for failover.
+    const keep = new Set(groupTargets(targets).slice(0, MAX_PARALLEL).map(g => g.key));
+    targets = targets.filter(t => keep.has(`${t.providerId}:${t.model}`));
+  }
+
+  let judge: Judge | undefined;
+  if (routing.mode === 'best' && groupTargets(targets).length > 1) {
+    let judgeTarget = targets[0];
+    if (routing.judge) {
+      const { targets: jt } = await buildTargets({ ...request, model: 'auto' }, { ...routing, providers: [routing.judge] });
+      if (jt[0]) judgeTarget = jt[0];
+    }
+    judge = makeLlmJudge(judgeTarget, routing.timeoutMs);
+  }
+
+  const strategyOpts: StrategyOptions = {
+    circuit: circuitStore,
+    timeoutMs: routing.timeoutMs,
+    overallTimeoutMs: routing.timeoutMs + 5000,
+    judge,
+    onKeyFailure: noteKeyFailure,
+  };
+  return { routing, targets, skipped, judge, strategyOpts };
 }
 
 export function resolveModelForProvider(providerType: string, requestedModel: string): string {
