@@ -1,4 +1,4 @@
-import { BaseProvider } from '../base.js';
+import { BaseProvider, ChatOptions, ProviderHttpError } from '../base.js';
 import { ChatRequest, ChatResponse, ModelInfo } from '../../types/index.js';
 
 export class OllamaProvider extends BaseProvider {
@@ -15,7 +15,7 @@ export class OllamaProvider extends BaseProvider {
     return `${this.baseUrl}/v1${endpoint}`;
   }
 
-  async chat(request: ChatRequest, apiKey: string): Promise<ChatResponse> {
+  async chat(request: ChatRequest, apiKey: string, options: ChatOptions = {}): Promise<ChatResponse> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -26,13 +26,14 @@ export class OllamaProvider extends BaseProvider {
     const url = this.getV1Url('/chat/completions');
     const res = await this.fetchWithTimeout(url, {
       method: 'POST',
+      signal: options.signal,
       headers,
       body: JSON.stringify(request)
-    });
+    }, options.timeoutMs ?? 60000);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || err.message || `Ollama Cloud error ${res.status}`);
+      throw new ProviderHttpError(err.error?.message || err.message || `Ollama Cloud error ${res.status}`, res.status);
     }
 
     return await res.json();
