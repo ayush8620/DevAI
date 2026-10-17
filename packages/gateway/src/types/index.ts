@@ -6,6 +6,29 @@ export const ChatMessageSchema = z.object({
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
+// ---- Routing ----
+export const ROUTING_MODES = ['single', 'fastest', 'best'] as const;
+export type RoutingMode = typeof ROUTING_MODES[number];
+
+/** A route target: provider (id, name or type) plus optional model. Strings may be "provider" or "provider:model". */
+export const TargetSpecSchema = z.union([
+  z.string().min(1),
+  z.object({ provider: z.string().min(1), model: z.string().min(1).optional() }),
+]);
+export type TargetSpec = z.infer<typeof TargetSpecSchema>;
+
+export const RoutingConfigSchema = z.object({
+  /** single = one provider with automatic failover (default); fastest/best = parallel fan-out */
+  mode: z.enum(ROUTING_MODES).optional(),
+  /** Providers that participate, in priority order */
+  providers: z.array(TargetSpecSchema).max(10).optional(),
+  /** Judge model for mode "best" */
+  judge: TargetSpecSchema.optional(),
+  /** Per-provider call timeout (ms) */
+  timeoutMs: z.number().int().min(1000).max(120000).optional(),
+});
+export type RoutingConfig = z.infer<typeof RoutingConfigSchema>;
+
 export const ChatRequestSchema = z.object({
   model: z.string().default('auto'),
   messages: z.array(ChatMessageSchema),
@@ -15,6 +38,8 @@ export const ChatRequestSchema = z.object({
   stream: z.boolean().optional(),
   stop: z.union([z.string(), z.array(z.string())]).optional(),
   user: z.string().optional(),
+  /** DevAI routing overrides for this request (never forwarded to providers) */
+  devai: RoutingConfigSchema.optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
