@@ -1,4 +1,6 @@
-import { BaseProvider, ChatOptions, ProviderHttpError } from '../base.js';
+import { BaseProvider, ChatOptions, ChatStreamChunk } from '../base.js';
+import { openAIBody, parseOpenAIStream } from '../openai-compatible.js';
+import { throwForStatus } from '../sse.js';
 import { ChatRequest, ChatResponse, ModelInfo } from '../../types/index.js';
 
 export class OllamaProvider extends BaseProvider {
@@ -28,15 +30,26 @@ export class OllamaProvider extends BaseProvider {
       method: 'POST',
       signal: options.signal,
       headers,
-      body: JSON.stringify(request)
+      body: JSON.stringify(openAIBody(request, false))
     }, options.timeoutMs ?? 60000);
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new ProviderHttpError(err.error?.message || err.message || `Ollama Cloud error ${res.status}`, res.status);
-    }
+    await throwForStatus(res, 'Ollama Cloud');
 
     return await res.json();
+  }
+
+  async *chatStream(request: ChatRequest, apiKey: string, options: ChatOptions = {}): AsyncGenerator<ChatStreamChunk> {
+    const timeoutMs = options.timeoutMs ?? 60000;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey && apiKey.trim() !== '' && apiKey !== 'none') headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+    const res = await this.fetchWithTimeout(this.getV1Url('/chat/completions'), {
+      method: 'POST',
+      signal: options.signal,
+      headers: headers,
+      body: JSON.stringify(openAIBody(request, true, false)),
+    }, timeoutMs);
+    await throwForStatus(res, 'Ollama Cloud');
+    yield* parseOpenAIStream(res, { signal: options.signal, idleTimeoutMs: timeoutMs });
   }
 
   async listModels(apiKey: string): Promise<ModelInfo[]> {
