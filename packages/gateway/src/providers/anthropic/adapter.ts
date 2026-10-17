@@ -1,4 +1,5 @@
-import { BaseProvider, ChatOptions, ProviderHttpError } from '../base.js';
+import { BaseProvider, ChatOptions, ChatStreamChunk, ProviderHttpError } from '../base.js';
+import { readSSE, throwForStatus } from '../sse.js';
 import { ChatRequest, ChatResponse, ModelInfo } from '../../types/index.js';
 
 export class AnthropicProvider extends BaseProvider {
@@ -6,25 +7,51 @@ export class AnthropicProvider extends BaseProvider {
     super(id, 'anthropic', name, baseUrl);
   }
 
-  async chat(request: ChatRequest, apiKey: string, options: ChatOptions = {}): Promise<ChatResponse> {
-    const systemMessages = request.messages.filter(m => m.role === 'system');
-    const system = systemMessages.length > 0 ? systemMessages[0].content : undefined;
-    
+  private buildRequest(request: ChatRequest, stream: boolean) {
+    const system = request.messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n') || undefined;
     const messages = request.messages
       .filter(m => m.role !== 'system')
-      .map(m => ({
-        role: m.role === 'user' ? 'user' : 'assistant',
-        content: m.content
-      }));
-
-    const anthropicReq = {
-      model: request.model,
-      system,
-      messages,
+      .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
+    const stop = request.stop === undefined ? undefined : Array.isArray(request.stop) ? request.stop : [request.stop];
+    return {
+      model: request.model, system, messages,
       max_tokens: request.max_tokens || 1024,
-      temperature: request.temperature,
-      top_p: request.top_p,
+      temperature: request.temperature, top_p: request.top_p, stop_sequences: stop,
+      ...(stream ? { stream: true } : {}),
     };
+  }
+
+  private headers(apiKey: string) {
+    return { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+  }
+
+  async *chatStream(request: ChatRequest, apiKey: string, options: ChatOptions = {}): AsyncGenerator<ChatStreamChunk> {
+    const timeoutMs = options.timeoutMs ?? 60000;
+    const res = await this.fetchWithTimeout(`${this.baseUrl}/messages`, {
+      method: 'POST', signal: options.signal, headers: this.headers(apiKey),
+      body: JSON.stringify(this.buildRequest(request, true)),
+    }, timeoutMs);
+    await throwForStatus(res, 'Anthropic');
+    let input = 0;
+    let output = 0;
+    for await (const data of readSSE(res, { signal: options.signal, idleTimeoutMs: timeoutMs })) {
+      let ev: any;
+      try { ev = JSON.parse(data); } catch { continue; }
+      if (ev.type === 'error') throw new ProviderHttpError(ev.error?.message || 'Anthropic stream error', ev.error?.type === 'overloaded_error' ? 529 : 502);
+      if (ev.type === 'message_start') input = ev.message?.usage?.input_tokens || 0;
+      else if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') yield { delta: ev.delta.text || '' };
+      else if (ev.type === 'message_delta') {
+        output = ev.usage?.output_tokens ?? output;
+        yield {
+          delta: '',
+          finishReason: ev.delta?.stop_reason === 'max_tokens' ? 'length' : 'stop',
+          usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output },
+        };
+      }
+    }
+  }
+
+  async chat(request: ChatRequest, apiKey: string, options: ChatOptions = {}): Promise<ChatResponse> {
 
     const res = await this.fetchWithTimeout(`${this.baseUrl}/messages`, {
       method: 'POST',
@@ -34,13 +61,10 @@ export class AnthropicProvider extends BaseProvider {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01'
       },
-      body: JSON.stringify(anthropicReq)
+      body: JSON.stringify(this.buildRequest(request, false))
     }, options.timeoutMs ?? 60000);
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new ProviderHttpError(err.error?.message || `Anthropic error ${res.status}`, res.status);
-    }
+    await throwForStatus(res, 'Anthropic');
 
     const data = await res.json();
 
@@ -51,7 +75,7 @@ export class AnthropicProvider extends BaseProvider {
       model: request.model,
       choices: [{
         index: 0,
-        message: { role: 'assistant', content: data.content[0].text },
+        message: { role: 'assistant', content: (data.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('') },
         finish_reason: data.stop_reason === 'max_tokens' ? 'length' : 'stop'
       }],
       usage: {
