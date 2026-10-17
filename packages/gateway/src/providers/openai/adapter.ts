@@ -1,4 +1,4 @@
-import { BaseProvider } from '../base.js';
+import { BaseProvider, ChatOptions, ProviderHttpError } from '../base.js';
 import { ChatRequest, ChatResponse, ModelInfo } from '../../types/index.js';
 
 export class OpenAIProvider extends BaseProvider {
@@ -6,19 +6,20 @@ export class OpenAIProvider extends BaseProvider {
     super(id, 'openai', name, baseUrl);
   }
 
-  async chat(request: ChatRequest, apiKey: string): Promise<ChatResponse> {
+  async chat(request: ChatRequest, apiKey: string, options: ChatOptions = {}): Promise<ChatResponse> {
     const res = await this.fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
+      signal: options.signal,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(request)
-    });
+    }, options.timeoutMs ?? 60000);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `OpenAI error ${res.status}`);
+      throw new ProviderHttpError(err.error?.message || `OpenAI error ${res.status}`, res.status);
     }
 
     return await res.json();
