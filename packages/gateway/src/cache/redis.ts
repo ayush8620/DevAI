@@ -6,11 +6,18 @@ export const redis = new Redis(config.REDIS_URL, {
   lazyConnect: true,
   maxRetriesPerRequest: 1,
   connectTimeout: 5000,
+  // Fail fast while Redis is down instead of queueing every command until a timeout:
+  // callers treat Redis as optional (cache misses, in-memory circuit breaker).
+  enableOfflineQueue: false,
+  // Keep reconnecting forever (capped backoff); giving up would leave the gateway
+  // without Redis until the next restart.
   retryStrategy(times) {
-    if (times > 3) return null;
-    return Math.min(times * 100, 2000);
+    return Math.min(times * 200, 5000);
   },
 });
+
+// Connect at startup (lazyConnect + offline queue off would otherwise never connect).
+redis.connect().catch(() => { /* retried by retryStrategy; logged below */ });
 
 redis.on('error', (err) => {
   logger.warn({ err: err.message }, 'Redis connection warning');
