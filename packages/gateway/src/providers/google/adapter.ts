@@ -1,4 +1,4 @@
-import { BaseProvider } from '../base.js';
+import { BaseProvider, ChatOptions, ProviderHttpError } from '../base.js';
 import { ChatRequest, ChatResponse, ModelInfo } from '../../types/index.js';
 
 export class GoogleProvider extends BaseProvider {
@@ -6,7 +6,7 @@ export class GoogleProvider extends BaseProvider {
     super(id, 'google', name, baseUrl);
   }
 
-  async chat(request: ChatRequest, apiKey: string): Promise<ChatResponse> {
+  async chat(request: ChatRequest, apiKey: string, options: ChatOptions = {}): Promise<ChatResponse> {
     // Gemini has no "system" role: send system messages as systemInstruction.
     const systemText = request.messages
       .filter(m => m.role === 'system')
@@ -34,16 +34,15 @@ export class GoogleProvider extends BaseProvider {
 
     const res = await this.fetchWithTimeout(`${this.baseUrl}/models/${encodeURIComponent(request.model)}:generateContent`, {
       method: 'POST',
+      signal: options.signal,
       // Send the key as a header so it never ends up in URLs/logs.
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify(geminiReq),
-    }, 60000);
+    }, options.timeoutMs ?? 60000);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      const e: any = new Error(err.error?.message || `Google error ${res.status}`);
-      e.status = res.status;
-      throw e;
+      throw new ProviderHttpError(err.error?.message || `Google error ${res.status}`, res.status);
     }
 
     const data = await res.json();
