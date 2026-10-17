@@ -5,6 +5,7 @@ import { recordUsage } from '../../services/usage.js';
 import { logger } from '../../middleware/logger.js';
 import { ChatRequestSchema, AppEnv } from '../../types/index.js';
 import { v4 as uuidv4 } from 'uuid';
+import { deduplicateRequest, generateCacheKey } from '../../engine/dedup.js';
 
 export const chatRoutes = new Hono<AppEnv>();
 
@@ -55,7 +56,11 @@ chatRoutes.post('/completions', async (c) => {
     c.header('X-Cache', 'MISS');
 
     // 3. Route request through engine
-    const { response, provider, credential } = await routeRequest(request, projectId);
+    // Identical concurrent requests share one upstream call.
+    const { response, provider, credential } = await deduplicateRequest(
+      `${projectId}:${generateCacheKey(request)}`,
+      () => routeRequest(request, projectId),
+    );
 
     // 4. Cache response (async, don't block)
     setCachedResponse(request, response)
