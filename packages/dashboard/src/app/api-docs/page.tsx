@@ -32,7 +32,7 @@ const client = new OpenAI({
 });
 
 const completion = await client.chat.completions.create({
-  model: 'auto', // or 'gpt-4o', 'claude-3-5-sonnet', 'gemini-1.5-pro'
+  model: 'auto', // or 'gpt-4o', 'claude-3-5-sonnet', 'gemini-2.5-flash'
   messages: [{ role: 'user', content: 'Explain binary search' }],
 });
 
