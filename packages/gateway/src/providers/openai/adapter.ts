@@ -1,4 +1,6 @@
-import { BaseProvider, ChatOptions, ProviderHttpError } from '../base.js';
+import { BaseProvider, ChatOptions, ChatStreamChunk } from '../base.js';
+import { openAIBody, parseOpenAIStream } from '../openai-compatible.js';
+import { throwForStatus } from '../sse.js';
 import { ChatRequest, ChatResponse, ModelInfo } from '../../types/index.js';
 
 export class OpenAIProvider extends BaseProvider {
@@ -14,15 +16,24 @@ export class OpenAIProvider extends BaseProvider {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
-      body: JSON.stringify(request)
+      body: JSON.stringify(openAIBody(request, false))
     }, options.timeoutMs ?? 60000);
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new ProviderHttpError(err.error?.message || `OpenAI error ${res.status}`, res.status);
-    }
+    await throwForStatus(res, 'OpenAI');
 
     return await res.json();
+  }
+
+  async *chatStream(request: ChatRequest, apiKey: string, options: ChatOptions = {}): AsyncGenerator<ChatStreamChunk> {
+    const timeoutMs = options.timeoutMs ?? 60000;
+    const res = await this.fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      signal: options.signal,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify(openAIBody(request, true, true)),
+    }, timeoutMs);
+    await throwForStatus(res, 'OpenAI');
+    yield* parseOpenAIStream(res, { signal: options.signal, idleTimeoutMs: timeoutMs });
   }
 
   async listModels(apiKey: string): Promise<ModelInfo[]> {
