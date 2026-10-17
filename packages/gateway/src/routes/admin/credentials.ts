@@ -1,11 +1,15 @@
 import { Hono } from 'hono';
 import { db } from '../../db/index.js';
-import { providerCredentials, providers } from '../../db/schema/index.js';
+import { providerCredentials, providers, usageRecords, healthChecks, rateLimits } from '../../db/schema/index.js';
 import { eq, and } from 'drizzle-orm';
 import { encrypt, decrypt, maskApiKey } from '../../crypto/encryption.js';
 import { createProvider } from '../../providers/registry.js';
 import { logAudit } from '../../services/audit.js';
 import { logger } from '../../middleware/logger.js';
+import { byPriority } from '../../engine/keys.js';
+import { getKeyUsage } from '../../engine/key-usage.js';
+import { keyCooldownLeft, clearKeyCooldown } from '../../engine/circuit.js';
+import { cacheGet, cacheSet, cacheDel } from '../../cache/redis.js';
 
 export const adminCredentialRoutes = new Hono();
 
@@ -16,15 +20,36 @@ export const adminCredentialRoutes = new Hono();
 adminCredentialRoutes.get('/provider/:providerId', async (c) => {
   try {
     const providerId = c.req.param('providerId');
-    const creds = await db.select().from(providerCredentials)
-      .where(eq(providerCredentials.providerId, providerId));
+    const [provider] = await db.select().from(providers).where(eq(providers.id, providerId));
+    const creds = (await db.select().from(providerCredentials)
+      .where(eq(providerCredentials.providerId, providerId)))
+      .sort((a, b) => (a.createdAt?.getTime?.() ?? 0) - (b.createdAt?.getTime?.() ?? 0));
+    const keyOrder: string[] = Array.isArray((provider?.config as any)?.keyOrder) ? (provider!.config as any).keyOrder : [];
+    const ordered = byPriority(creds.map(c => ({ ...c, credentialId: c.id })), keyOrder);
+    const usage = await getKeyUsage(ordered.map(c => c.id));
 
-    // Never return decrypted keys
-    const masked = creds.map(cred => ({
+    // Never return decrypted keys: only the real prefix + last 4 characters
+    const masked = await Promise.all(ordered.map(async (cred, i) => {
+      let maskedKey = '••••';
+      try { maskedKey = maskApiKey(decrypt({ ciphertext: cred.encryptedKey, iv: cred.iv, authTag: cred.authTag })); } catch { /* wrong master key */ }
+      const cooldownSec = await keyCooldownLeft(cred.id);
+      const health = await cacheGet(`health:key:${cred.id}`);
+      const recent = await cacheGet(`keyerr:${cred.id}`);
+      let lastFailure: any = null;
+      try { lastFailure = recent ? JSON.parse(recent) : null; } catch { /* ignore */ }
+      const liveStatus = !cred.enabled || cred.status === 'disabled' ? 'disabled'
+        : cooldownSec > 0 ? (lastFailure?.kind === 'rate_limited' ? 'rate_limited' : lastFailure?.kind === 'auth' ? 'invalid' : lastFailure?.kind === 'quota' ? 'quota_exhausted' : 'cooling_down')
+        : health === 'unhealthy' ? 'unhealthy' : 'active';
+      return {
       id: cred.id,
       providerId: cred.providerId,
       name: cred.name,
-      maskedKey: maskApiKey(cred.encryptedKey), // Show masked version
+      maskedKey,
+      priority: i + 1,
+      liveStatus,
+      cooldownSec,
+      health: health ?? 'unknown',
+      requestsThisMinute: usage[cred.id] ?? 0,
       enabled: cred.enabled,
       status: cred.status,
       quotaLimit: cred.quotaLimit,
@@ -33,6 +58,7 @@ adminCredentialRoutes.get('/provider/:providerId', async (c) => {
       lastError: cred.lastError,
       createdAt: cred.createdAt,
       updatedAt: cred.updatedAt,
+    };
     }));
 
     return c.json({ data: masked });
@@ -146,9 +172,30 @@ adminCredentialRoutes.delete('/:id', async (c) => {
   try {
     const id = c.req.param('id');
 
-    const [deleted] = await db.delete(providerCredentials)
-      .where(eq(providerCredentials.id, id))
-      .returning();
+    // Rows that reference the key would block the delete (FK). Keep usage history
+    // (detached from the key), drop its health checks / rate-limit rows, then delete.
+    // Retried because a request that just used the key may insert a usage row meanwhile.
+    let deleted: typeof providerCredentials.$inferSelect | undefined;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await db.update(usageRecords).set({ credentialId: null }).where(eq(usageRecords.credentialId, id));
+        await db.delete(healthChecks).where(eq(healthChecks.credentialId, id));
+        await db.delete(rateLimits).where(eq(rateLimits.credentialId, id));
+        [deleted] = await db.delete(providerCredentials)
+          .where(eq(providerCredentials.id, id))
+          .returning();
+        break;
+      } catch (err: any) {
+        const fk = err?.code === '23503' || err?.cause?.code === '23503' || /foreign key/i.test(String(err?.message));
+        if (!fk || attempt >= 3) throw err;
+        await new Promise(r => setTimeout(r, 150 * attempt));
+      }
+    }
+    if (deleted) {
+      await clearKeyCooldown(id);
+      await cacheDel(`health:key:${id}`);
+      await cacheDel(`keyerr:${id}`);
+    }
 
     if (!deleted) {
       return c.json({ error: { type: 'not_found', message: 'Credential not found' } }, 404);
@@ -195,13 +242,21 @@ adminCredentialRoutes.post('/:id/test', async (c) => {
     const result = await provider.healthCheck(decryptedKey);
 
     // Update credential status based on result
+    // A failed test is recorded but the key stays routable: routing cools it down on errors
+    // and it recovers automatically. A passing test clears any cooldown right away.
     await db.update(providerCredentials)
       .set({
-        status: result.healthy ? 'active' : 'error',
+        status: cred.status === 'disabled' ? 'disabled' : result.healthy ? 'active' : 'error',
         lastError: result.healthy ? null : 'Health check failed',
         updatedAt: new Date(),
       })
       .where(eq(providerCredentials.id, id));
+    await cacheSet(`health:key:${id}`, result.healthy ? 'healthy' : 'unhealthy', 300);
+    if (result.healthy) {
+      await clearKeyCooldown(id);
+      await cacheDel(`keyerr:${id}`);
+      await cacheDel(`ratelimit:${id}`);
+    }
 
     return c.json({
       data: {

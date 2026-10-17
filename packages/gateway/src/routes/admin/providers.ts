@@ -7,6 +7,7 @@ import { checkProviderHealth } from '../../services/health.js';
 import { createProvider } from '../../providers/registry.js';
 import { decrypt } from '../../crypto/encryption.js';
 import { logger } from '../../middleware/logger.js';
+import { KEY_STRATEGIES, isKeyStrategy } from '../../engine/keys.js';
 
 export const adminProviderRoutes = new Hono();
 
@@ -31,6 +32,7 @@ adminProviderRoutes.get('/', async (c) => {
         status: p.status,
         baseUrl: p.baseUrl,
         config: p.config,
+        keyStrategy: isKeyStrategy((p.config as any)?.keyStrategy) ? (p.config as any).keyStrategy : 'failover',
         credentialCount: credCount?.count || 0,
         modelCount: modelCount?.count || 0,
         createdAt: p.createdAt,
@@ -50,6 +52,9 @@ adminProviderRoutes.post('/', async (c) => {
   try {
     const body = await c.req.json();
 
+    if (body.config?.keyStrategy !== undefined && !isKeyStrategy(body.config.keyStrategy)) {
+      return c.json({ error: { type: 'validation_error', message: `keyStrategy must be one of: ${KEY_STRATEGIES.join(', ')}` } }, 400);
+    }
     if (!body.type || !body.name) {
       return c.json({ error: { type: 'validation_error', message: 'type and name are required' } }, 400);
     }
@@ -92,7 +97,25 @@ adminProviderRoutes.patch('/:id', async (c) => {
     if (body.name) updates.name = body.name;
     if (body.baseUrl !== undefined) updates.baseUrl = body.baseUrl;
     if (body.status) updates.status = body.status;
-    if (body.config) updates.config = body.config;
+    if (body.config !== undefined) {
+      if (typeof body.config !== 'object' || body.config === null || Array.isArray(body.config)) {
+        return c.json({ error: { type: 'validation_error', message: 'config must be an object' } }, 400);
+      }
+      const ks = body.config.keyStrategy;
+      if (ks !== undefined && ks !== null && !isKeyStrategy(ks)) {
+        return c.json({ error: { type: 'validation_error', message: `keyStrategy must be one of: ${KEY_STRATEGIES.join(', ')}` } }, 400);
+      }
+      const ko = body.config.keyOrder;
+      if (ko !== undefined && ko !== null && !(Array.isArray(ko) && ko.every((x: unknown) => typeof x === 'string'))) {
+        return c.json({ error: { type: 'validation_error', message: 'keyOrder must be an array of credential ids' } }, 400);
+      }
+      // Merge so saving one setting (e.g. key strategy) doesn't wipe others (priority, keyOrder)
+      const [current] = await db.select().from(providers).where(eq(providers.id, id));
+      if (!current) return c.json({ error: { type: 'not_found', message: 'Provider not found' } }, 404);
+      const merged: Record<string, unknown> = { ...((current.config as object) || {}), ...body.config };
+      for (const k of Object.keys(merged)) if (merged[k] === null) delete merged[k];
+      updates.config = merged;
+    }
 
     const [updated] = await db.update(providers)
       .set(updates)
