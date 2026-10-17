@@ -46,6 +46,19 @@ check "GET /admin/audit-logs" "$(code "${ADMIN[@]}" "$URL/admin/audit-logs")" 20
 check "GET /admin/providers" "$(code "${ADMIN[@]}" "$URL/admin/providers")" 200
 check "unknown route 404" "$(code "$URL/nope")" 404
 
+# Routing: a deliberately broken provider first, then the real one -> automatic failover
+BROKEN=$(curl -sf "${ADMIN[@]}" -X POST "$URL/admin/providers" -d "{\"type\":\"openai\",\"name\":\"e2e-broken\",\"baseUrl\":\"http://127.0.0.1:9/v1\"}" | json .data.id)
+curl -s -o /dev/null "${ADMIN[@]}" -X POST "$URL/admin/credentials/provider/$BROKEN" -d '{"name":"bad","apiKey":"invalid"}'
+RBODY="{\"devai\":{\"providers\":[\"$BROKEN:gpt-4o-mini\",\"$PROVIDER:$MODEL\"]},\"messages\":[{\"role\":\"user\",\"content\":\"Say ok $RANDOM\"}]}"
+FB=$(curl -s -D - -o /tmp/e2e_body "${USER[@]}" -X POST "$URL/v1/chat/completions" -d "$RBODY" | tr -d '\r' | awk -F': ' 'tolower($1)=="x-devai-fallbacks"{print $2}')
+check "failover to working provider (x-devai-fallbacks)" "$FB" 1
+FBODY="{\"devai\":{\"mode\":\"fastest\",\"providers\":[\"$PROVIDER:$MODEL\"]},\"messages\":[{\"role\":\"user\",\"content\":\"Say ok $RANDOM\"}]}"
+check "fastest mode" "$(code "${USER[@]}" -X POST "$URL/v1/chat/completions" -d "$FBODY")" 200
+check "mode in metadata" "$(json .devai.mode < /tmp/e2e_body)" fastest
+DOWN="{\"devai\":{\"providers\":[\"$BROKEN:gpt-4o\"]},\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+check "all providers down -> 502" "$(code "${USER[@]}" -X POST "$URL/v1/chat/completions" -d "$DOWN")" 502
+curl -s -o /dev/null "${ADMIN[@]}" -X DELETE "$URL/admin/providers/$BROKEN"
+
 # Clean up test resources
 curl -s -o /dev/null "${ADMIN[@]}" -X DELETE "$URL/admin/providers/$PROVIDER"
 curl -s -o /dev/null "${ADMIN[@]}" -X DELETE "$URL/admin/projects/$PROJECT"
