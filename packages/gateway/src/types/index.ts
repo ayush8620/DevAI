@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { KEY_STRATEGIES } from '../engine/keys.js';
 
 export const ChatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant']),
@@ -26,6 +27,8 @@ export const RoutingConfigSchema = z.object({
   judge: TargetSpecSchema.optional(),
   /** Per-provider call timeout (ms) */
   timeoutMs: z.number().int().min(1000).max(120000).optional(),
+  /** How a provider's multiple API keys are used (overrides the provider setting) */
+  keyStrategy: z.enum(KEY_STRATEGIES).optional(),
 });
 export type RoutingConfig = z.infer<typeof RoutingConfigSchema>;
 
@@ -36,6 +39,7 @@ export const ChatRequestSchema = z.object({
   max_tokens: z.number().optional(),
   top_p: z.number().optional(),
   stream: z.boolean().optional(),
+  stream_options: z.object({ include_usage: z.boolean().optional() }).optional(),
   stop: z.union([z.string(), z.array(z.string())]).optional(),
   user: z.string().optional(),
   /** DevAI routing overrides for this request (never forwarded to providers) */
