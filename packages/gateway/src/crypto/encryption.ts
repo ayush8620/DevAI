@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { config } from '../config.js';
+import { maskSecret } from '../engine/keys.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -48,8 +49,7 @@ export function generateApiKey(): { key: string; prefix: string; hash: string } 
   return { key, prefix, hash };
 }
 
+/** Mask a PLAINTEXT key as its real prefix + last 4 characters (e.g. "AIza…DyMg"). */
 export function maskApiKey(key: string): string {
-  if (key.length <= 8) return '****';
-  const lastFour = key.substring(key.length - 4);
-  return `sk-••••••${lastFour}`;
+  return maskSecret(key);
 }
