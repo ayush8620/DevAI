@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { RoutingSettings, RoutingConfig } from '@/components/routing-settings';
 import { Plus, Key, Copy, Check, Trash2, FolderKanban, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 interface Project {
@@ -10,6 +11,7 @@ interface Project {
   status: string;
   apiKeyCount: number;
   requestCount: number;
+  routing?: RoutingConfig;
 }
 
 interface ApiKey {
@@ -221,6 +223,15 @@ export default function ProjectsPage() {
       )}
 
       {/* Selected Project API Keys */}
+      {selectedProject && (
+        <RoutingSettings
+          key={selectedProject}
+          projectId={selectedProject}
+          routing={projects.find(p => p.id === selectedProject)?.routing}
+          onSaved={loadProjects}
+        />
+      )}
+
       {selectedProject && (
         <div className="rounded-xl border bg-card p-6 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b pb-4">
