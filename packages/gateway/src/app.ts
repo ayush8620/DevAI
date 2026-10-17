@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { chatRoutes } from './routes/v1/chat.js';
 import { modelsRoutes } from './routes/v1/models.js';
 import { healthRoutes } from './routes/v1/health.js';
@@ -13,39 +12,14 @@ import { adminAuditRoutes } from './routes/admin/audit.js';
 import { authMiddleware } from './middleware/auth.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { loggerMiddleware, logger } from './middleware/logger.js';
-import { config } from './config.js';
+import { corsMiddleware } from './middleware/cors.js';
 
 import { AppEnv } from './types/index.js';
 
 export const app = new Hono<AppEnv>();
 
 // Global middleware
-const allowedOrigins = (config.ALLOWED_ORIGINS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-
-app.use('*', cors({
-  origin: (origin) => {
-    // If no origin (e.g. server-to-server, cURL), allow
-    if (!origin) return '*';
-    // If wildcard explicitly allowed
-    if (allowedOrigins.includes('*')) return origin;
-    // Allow local development
-    let host = '';
-    try { host = new URL(origin).hostname; } catch { return null; }
-    if (host === 'localhost' || host === '127.0.0.1') return origin;
-    // Allow Vercel preview and production deployments
-    if (host.endsWith('.vercel.app')) return origin;
-    // Allow configured origins
-    if (allowedOrigins.includes(origin)) return origin;
-    return null;
-  },
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-DevAI-Mode'],
-  exposeHeaders: ['X-Request-ID', 'X-Cache', 'X-DevAI-Mode', 'X-DevAI-Provider', 'X-DevAI-Fallbacks'],
-  maxAge: 86400,
-}));
+app.use('*', corsMiddleware);
 
 app.use('*', requestIdMiddleware);
 app.use('*', loggerMiddleware);
