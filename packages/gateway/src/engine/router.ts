@@ -8,7 +8,7 @@ import { eq, and } from 'drizzle-orm';
 import { withRetry } from './retry.js';
 import { scoreCandidates } from './scorer.js';
 import { checkQuota, consumeQuota } from './quota.js';
-import { redis } from '../cache/redis.js';
+import { cacheGet, cacheSet } from '../cache/redis.js';
 import { logger } from '../middleware/logger.js';
 
 interface ProviderCandidate {
@@ -54,11 +54,11 @@ export async function routeRequest(
     }
 
     // Check rate-limit state in Redis
-    const isRateLimited = await redis.get(`ratelimit:${cred.id}`);
+    const isRateLimited = await cacheGet(`ratelimit:${cred.id}`);
     if (isRateLimited) continue;
 
     // Check health state in Redis
-    const healthState = await redis.get(`health:${providerDef.id}`);
+    const healthState = await cacheGet(`health:${providerDef.id}`);
     if (healthState === 'unhealthy') continue;
 
     // Check quota
@@ -121,7 +121,7 @@ export async function routeRequest(
           maxAttempts: 2,
           onRateLimited: async () => {
             // Mark this credential as rate-limited in Redis (60s TTL)
-            await redis.set(`ratelimit:${candidate.credentialId}`, '1', 'EX', 60);
+            await cacheSet(`ratelimit:${candidate.credentialId}`, '1', 60);
           },
         }
       );
@@ -129,7 +129,7 @@ export async function routeRequest(
       const latencyMs = Date.now() - startTime;
 
       // Store latency for future scoring
-      await redis.set(`latency:${candidate.credentialId}`, String(latencyMs), 'EX', 300);
+      await cacheSet(`latency:${candidate.credentialId}`, String(latencyMs), 300);
 
       // Consume quota
       if (response.usage) {
@@ -162,7 +162,7 @@ function resolveModelForProvider(providerType: string, requestedModel: string): 
   const defaultModels: Record<string, string> = {
     openai: 'gpt-4o-mini',
     anthropic: 'claude-3-5-haiku-20241022',
-    google: 'gemini-1.5-flash',
+    google: 'gemini-2.5-flash',
     groq: 'llama-3.1-8b-instant',
     ollama: 'gpt-oss:120b',
   };
@@ -190,7 +190,7 @@ async function isModelSupported(providerType: string, modelId: string, providerI
   const modelMap: Record<string, string[]> = {
     openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo', 'o1', 'o1-mini', 'o3-mini'],
     anthropic: ['claude-3-5-sonnet', 'claude-3-5-haiku', 'claude-3-opus', 'claude-4-sonnet', 'claude-4-opus'],
-    google: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-pro'],
+    google: ['gemini', 'gemma'],
     groq: ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
     ollama: ['llama3', 'llama', 'mistral', 'deepseek', 'qwen', 'phi', 'gemma', 'codellama', 'starcoder', 'vicuna', 'gpt-oss'],
   };

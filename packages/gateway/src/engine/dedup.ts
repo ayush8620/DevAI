@@ -11,8 +11,18 @@ export function generateCacheKey(request: ChatRequest): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
-export async function deduplicateRequest(key: string, fn: () => Promise<ChatResponse>): Promise<ChatResponse> {
-  // In a real system, use Redis SET NX here.
-  // For now, simple pass-through.
-  return await fn();
+const inFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * Coalesce identical in-flight requests: while a request with the same key is
+ * running, later callers share its result instead of calling the provider again.
+ * This is per gateway instance (in memory).
+ */
+export async function deduplicateRequest<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inFlight.get(key);
+  if (existing) return existing as Promise<T>;
+
+  const promise = fn().finally(() => inFlight.delete(key));
+  inFlight.set(key, promise);
+  return promise;
 }
