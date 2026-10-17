@@ -32,9 +32,11 @@ app.use('*', cors({
     // If wildcard explicitly allowed
     if (allowedOrigins.includes('*')) return origin;
     // Allow local development
-    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return origin;
+    let host = '';
+    try { host = new URL(origin).hostname; } catch { return null; }
+    if (host === 'localhost' || host === '127.0.0.1') return origin;
     // Allow Vercel preview and production deployments
-    if (origin.endsWith('.vercel.app')) return origin;
+    if (host.endsWith('.vercel.app')) return origin;
     // Allow configured origins
     if (allowedOrigins.includes(origin)) return origin;
     return null;
