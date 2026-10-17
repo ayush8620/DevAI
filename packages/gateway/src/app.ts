@@ -40,8 +40,8 @@ app.use('*', cors({
     return null;
   },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
-  exposeHeaders: ['X-Request-ID', 'X-Cache'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-DevAI-Mode'],
+  exposeHeaders: ['X-Request-ID', 'X-Cache', 'X-DevAI-Mode', 'X-DevAI-Provider', 'X-DevAI-Fallbacks'],
   maxAge: 86400,
 }));
 
