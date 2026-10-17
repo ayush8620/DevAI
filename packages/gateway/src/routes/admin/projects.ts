@@ -4,6 +4,7 @@ import { projects, apiKeys, usageRecords } from '../../db/schema/index.js';
 import { eq, count } from 'drizzle-orm';
 import { logAudit } from '../../services/audit.js';
 import { logger } from '../../middleware/logger.js';
+import { RoutingConfigSchema } from '../../types/index.js';
 
 export const adminProjectRoutes = new Hono();
 
@@ -26,6 +27,7 @@ adminProjectRoutes.get('/', async (c) => {
         name: p.name,
         description: p.description,
         status: p.status,
+        routing: p.routing ?? {},
         apiKeyCount: keyCount?.count || 0,
         requestCount: requestCount?.count || 0,
         createdAt: p.createdAt,
@@ -80,6 +82,13 @@ adminProjectRoutes.patch('/:id', async (c) => {
     if (body.name) updates.name = body.name;
     if (body.description !== undefined) updates.description = body.description;
     if (body.status) updates.status = body.status;
+    if (body.routing !== undefined) {
+      const parsed = RoutingConfigSchema.safeParse(body.routing ?? {});
+      if (!parsed.success) {
+        return c.json({ error: { type: 'validation_error', message: 'Invalid routing config', details: parsed.error.flatten() } }, 400);
+      }
+      updates.routing = parsed.data;
+    }
 
     const [updated] = await db.update(projects)
       .set(updates)
