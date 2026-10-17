@@ -5,6 +5,7 @@ import { createProvider } from '../providers/registry.js';
 import { decrypt } from '../crypto/encryption.js';
 import { redis, cacheSet } from '../cache/redis.js';
 import { logger } from '../middleware/logger.js';
+import { maskSecret } from '../engine/keys.js';
 
 export interface HealthResult {
   providerId: string;
@@ -16,81 +17,88 @@ export interface HealthResult {
   error?: string;
 }
 
-export async function checkProviderHealth(providerId: string): Promise<HealthResult> {
+export interface KeyHealth {
+  credentialId: string;
+  name: string;
+  key: string;
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  latencyMs: number;
+  error?: string;
+}
+
+/**
+ * Check every enabled key of a provider (in parallel). The provider is healthy if at
+ * least one key works; a bad key only marks that key unhealthy, so routing keeps
+ * using the provider's other keys.
+ */
+export async function checkProviderHealth(providerId: string): Promise<HealthResult & { keys?: KeyHealth[] }> {
   const [providerDef] = await db.select().from(providers).where(eq(providers.id, providerId));
   if (!providerDef) {
     return { providerId, providerName: 'Unknown', providerType: 'unknown', status: 'unhealthy', latencyMs: 0, error: 'Provider not found' };
   }
 
-  // Get first active credential for this provider
   const creds = await db.select().from(providerCredentials)
-    .where(and(eq(providerCredentials.providerId, providerId), eq(providerCredentials.enabled, true)))
-    .limit(1);
+    .where(and(eq(providerCredentials.providerId, providerId), eq(providerCredentials.enabled, true)));
 
   if (!creds.length) {
     return { providerId, providerName: providerDef.name, providerType: providerDef.type, status: 'disabled', latencyMs: 0, error: 'No active credentials' };
   }
 
-  const cred = creds[0];
-  const decryptedKey = decrypt({ ciphertext: cred.encryptedKey, iv: cred.iv, authTag: cred.authTag });
   const provider = createProvider(providerDef.type, providerDef.id, providerDef.name, providerDef.baseUrl || undefined);
+  const keys: KeyHealth[] = await Promise.all(creds.map(async (cred): Promise<KeyHealth> => {
+    let apiKey = '';
+    try {
+      apiKey = decrypt({ ciphertext: cred.encryptedKey, iv: cred.iv, authTag: cred.authTag });
+      const result = await provider.healthCheck(apiKey);
+      const status = result.healthy ? (result.latencyMs > 5000 ? 'degraded' : 'healthy') : 'unhealthy';
+      return { credentialId: cred.id, name: cred.name, key: maskSecret(apiKey), status, latencyMs: result.latencyMs, error: result.healthy ? undefined : 'health check failed' };
+    } catch (err: any) {
+      return { credentialId: cred.id, name: cred.name, key: maskSecret(apiKey), status: 'unhealthy', latencyMs: 0, error: String(err?.message || err).slice(0, 200) };
+    }
+  }));
 
-  try {
-    const result = await provider.healthCheck(decryptedKey);
-    const status = result.healthy ? (result.latencyMs > 5000 ? 'degraded' : 'healthy') : 'unhealthy';
-
-    // Cache health status in Redis (5 min TTL)
-    await cacheSet(`health:${providerId}`, status, 300);
-
-    // Store in DB
+  for (const k of keys) {
+    await cacheSet(`health:key:${k.credentialId}`, k.status, 300);
     await db.insert(healthChecks).values({
-      providerId,
-      credentialId: cred.id,
-      status,
-      latencyMs: result.latencyMs,
-    });
-
-    return { providerId, providerName: providerDef.name, providerType: providerDef.type, credentialId: cred.id, status, latencyMs: result.latencyMs };
-  } catch (err: any) {
-    await cacheSet(`health:${providerId}`, 'unhealthy', 300);
-
-    await db.insert(healthChecks).values({
-      providerId,
-      credentialId: cred.id,
-      status: 'unhealthy',
-      latencyMs: 0,
-      error: err.message,
-    });
-
-    return { providerId, providerName: providerDef.name, providerType: providerDef.type, status: 'unhealthy', latencyMs: 0, error: err.message };
+      providerId, credentialId: k.credentialId, status: k.status, latencyMs: k.latencyMs, error: k.error,
+    }).catch(() => {});
   }
+
+  const working = keys.filter(k => k.status !== 'unhealthy');
+  const status: HealthResult['status'] = !working.length ? 'unhealthy' : working.some(k => k.status === 'healthy') ? 'healthy' : 'degraded';
+  await cacheSet(`health:${providerId}`, status, 300);
+  const best = working.sort((a, b) => a.latencyMs - b.latencyMs)[0];
+  return {
+    providerId, providerName: providerDef.name, providerType: providerDef.type,
+    credentialId: best?.credentialId, status, latencyMs: best?.latencyMs ?? 0,
+    error: working.length ? undefined : keys[0]?.error,
+    keys,
+  };
 }
 
 export async function checkAllProviders(): Promise<HealthResult[]> {
   const allProviders = await db.select().from(providers).where(eq(providers.status, 'active'));
-  const results: HealthResult[] = [];
-
-  for (const p of allProviders) {
+  return Promise.all(allProviders.map(async (p): Promise<HealthResult> => {
     try {
-      const result = await checkProviderHealth(p.id);
-      results.push(result);
+      return await checkProviderHealth(p.id);
     } catch (err: any) {
-      results.push({
-        providerId: p.id,
-        providerName: p.name,
-        providerType: p.type,
-        status: 'unhealthy',
-        latencyMs: 0,
-        error: err.message,
-      });
+      return { providerId: p.id, providerName: p.name, providerType: p.type, status: 'unhealthy', latencyMs: 0, error: err.message };
     }
-  }
-
-  return results;
+  }));
 }
 
+// The public /v1/health endpoint reuses recent provider checks instead of calling every provider on each hit.
+let lastProviderCheck: { at: number; results: HealthResult[] } | null = null;
+const PUBLIC_HEALTH_TTL_MS = 30000;
+
 export async function getHealthStatus() {
-  const providerResults = await checkAllProviders();
+  let providerResults: HealthResult[];
+  if (lastProviderCheck && Date.now() - lastProviderCheck.at < PUBLIC_HEALTH_TTL_MS) {
+    providerResults = lastProviderCheck.results;
+  } else {
+    providerResults = await checkAllProviders();
+    lastProviderCheck = { at: Date.now(), results: providerResults };
+  }
 
   // Check Redis
   let redisStatus = 'healthy';
@@ -112,9 +120,10 @@ export async function getHealthStatus() {
   const anyUnhealthy = providerResults.some(r => r.status === 'unhealthy');
 
   return {
-    status: redisStatus === 'unhealthy' || dbStatus === 'unhealthy'
+    // Redis is optional (cache/cooldowns fall back to memory), so it only degrades the gateway
+    status: dbStatus === 'unhealthy'
       ? 'unhealthy'
-      : anyUnhealthy
+      : redisStatus === 'unhealthy' || anyUnhealthy
         ? 'degraded'
         : allHealthy
           ? 'healthy'
@@ -126,6 +135,8 @@ export async function getHealthStatus() {
       status: r.status,
       latencyMs: r.latencyMs,
       error: r.error,
+      // Public endpoint: key counts only, never key names or hints
+      keys: (r as any).keys ? { total: (r as any).keys.length, healthy: (r as any).keys.filter((k: KeyHealth) => k.status !== 'unhealthy').length } : undefined,
     })),
     redis: redisStatus,
     database: dbStatus,
@@ -151,6 +162,7 @@ export function startHealthCheckWorker(intervalMs: number): void {
   setInterval(async () => {
     try {
       const results = await checkAllProviders();
+      lastProviderCheck = { at: Date.now(), results };
       const unhealthy = results.filter(r => r.status === 'unhealthy');
       if (unhealthy.length > 0) {
         logger.warn({ unhealthy: unhealthy.map(r => r.providerName) }, 'Unhealthy providers detected');

@@ -23,7 +23,7 @@ export async function recordUsage(data: UsageData): Promise<void> {
   try {
     const reqId = data.requestId || `req_${uuidv4()}`;
 
-    await db.insert(usageRecords).values({
+    const row = {
       requestId: reqId,
       projectId: data.projectId,
       providerId: data.providerId || null,
@@ -36,7 +36,15 @@ export async function recordUsage(data: UsageData): Promise<void> {
       status: data.status,
       cacheHit: data.cacheHit,
       error: data.error || null,
-    });
+    };
+    try {
+      await db.insert(usageRecords).values(row);
+    } catch (err: any) {
+      // The key was deleted while the request ran: keep the usage row without the key
+      const fk = err?.code === '23503' || err?.cause?.code === '23503' || /foreign key/i.test(String(err?.message));
+      if (!fk || !row.credentialId) throw err;
+      await db.insert(usageRecords).values({ ...row, credentialId: null });
+    }
 
     // Also insert into requests table
     await db.insert(requests).values({
