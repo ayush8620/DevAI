@@ -3,7 +3,7 @@ import { providers, providerCredentials, healthChecks } from '../db/schema/index
 import { eq, and, desc } from 'drizzle-orm';
 import { createProvider } from '../providers/registry.js';
 import { decrypt } from '../crypto/encryption.js';
-import { redis } from '../cache/redis.js';
+import { redis, cacheSet } from '../cache/redis.js';
 import { logger } from '../middleware/logger.js';
 
 export interface HealthResult {
@@ -40,7 +40,7 @@ export async function checkProviderHealth(providerId: string): Promise<HealthRes
     const status = result.healthy ? (result.latencyMs > 5000 ? 'degraded' : 'healthy') : 'unhealthy';
 
     // Cache health status in Redis (5 min TTL)
-    await redis.set(`health:${providerId}`, status, 'EX', 300);
+    await cacheSet(`health:${providerId}`, status, 300);
 
     // Store in DB
     await db.insert(healthChecks).values({
@@ -52,7 +52,7 @@ export async function checkProviderHealth(providerId: string): Promise<HealthRes
 
     return { providerId, providerName: providerDef.name, providerType: providerDef.type, credentialId: cred.id, status, latencyMs: result.latencyMs };
   } catch (err: any) {
-    await redis.set(`health:${providerId}`, 'unhealthy', 'EX', 300);
+    await cacheSet(`health:${providerId}`, 'unhealthy', 300);
 
     await db.insert(healthChecks).values({
       providerId,
