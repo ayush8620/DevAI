@@ -26,8 +26,12 @@ describe('Crypto & Key Management', () => {
 
   it('should mask API keys for UI presentation without exposing raw secrets', () => {
     const masked = maskApiKey('sk-ant-api03-1234567890abcdef91ab');
-    expect(masked).toBe('sk-••••••91ab');
+    expect(masked).toBe('sk-a…91ab');
     expect(masked.includes('1234567890')).toBe(false);
+    // real prefix of the real key (not "sk-" for every provider)
+    expect(maskApiKey('AIzaSyD-abcdefghijklmnopqrstuvwxyzDyMg')).toBe('AIza…DyMg');
+    expect(maskApiKey('gsk_abcdefghijklmnopqrstuvwxyz0123')).toBe('gsk_…0123');
+    expect(maskApiKey('short')).toBe('••••');
   });
 
   it('should produce deterministic SHA-256 hashes for API key lookups', () => {
