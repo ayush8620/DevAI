@@ -2,7 +2,7 @@
   "name": "devai-gateway",
   "version": "1.0.0",
   "private": true,
-  "description": "DevAI Gateway — Unified AI API endpoint with multi-provider management",
+  "description": "DevAI Gateway \u2014 Unified AI API endpoint with multi-provider management",
   "workspaces": [
     "packages/gateway",
     "packages/dashboard"
@@ -19,12 +19,21 @@
     "test": "npm run test -w packages/gateway",
     "test:unit": "npm run test:unit -w packages/gateway",
     "test:integration": "npm run test:integration -w packages/gateway",
-    "lint": "npm run lint -w packages/gateway && npm run lint -w packages/dashboard"
+    "lint": "npm run lint -w packages/gateway && npm run lint -w packages/dashboard",
+    "test:e2e": "bash scripts/e2e.sh"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "esbuild@0.19.12": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true,
+    "msgpackr-extract@3.0.4": true,
+    "esbuild@0.25.12": true
   }
 }

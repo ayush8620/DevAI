@@ -39,28 +39,57 @@ Applications
 ### Setup
 
 ```bash
-# Clone and install
-git clone <repo>
-cd devai-gateway
+git clone https://github.com/ayush8620/DevAI
+cd DevAI
 npm install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your database URL, Redis URL, and generate encryption keys
+# Edit .env: set DATABASE_URL, REDIS_URL, and generate MASTER_ENCRYPTION_KEY
+# and ADMIN_API_KEY with the commands shown in .env.example
 
-# Push database schema
+# Create the database tables
 npm run db:push
 
-# Start development servers
+# Start gateway + dashboard
 npm run dev
 ```
 
 The gateway runs on `http://localhost:3001` and the dashboard on `http://localhost:3000`.
+Open **Settings** in the dashboard and paste your `ADMIN_API_KEY` (it is stored only in your browser).
 
 ### Optional: Local PostgreSQL & Redis (Docker)
 
 ```bash
 docker compose up -d
+```
+
+Then use these values in `.env`:
+
+```env
+DATABASE_URL=postgresql://devai:devai_local_password@localhost:5432/devai
+REDIS_URL=redis://:devai_redis_password@localhost:6379
+```
+
+Neon URLs use Neon's serverless driver; any other PostgreSQL URL uses `node-postgres`.
+
+### Production build
+
+```bash
+npm run build          # gateway -> packages/gateway/dist/index.js, dashboard -> .next
+npm run start -w packages/gateway
+npm run start -w packages/dashboard
+```
+
+### Tests
+
+```bash
+npm test               # unit + integration tests (integration needs DB/Redis from .env)
+npm run lint           # type-check both packages
+
+# End-to-end smoke test against a running gateway (creates and cleans up test data)
+ADMIN_API_KEY=... PROVIDER_API_KEY=your_gemini_key npm run test:e2e
+# Optional: PROVIDER_TYPE=groq MODEL=llama-3.1-8b-instant GATEWAY_URL=http://localhost:3001
 ```
 
 ## Usage
@@ -120,10 +149,15 @@ AI_API_KEY=dvai_your_api_key
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET/POST` | `/admin/providers` | Provider management |
-| `GET/POST` | `/admin/providers/:id/credentials` | Credential management |
-| `GET/POST` | `/admin/projects` | Project management |
-| `POST` | `/admin/projects/:id/api-keys` | API key generation |
+| `GET/POST/PATCH/DELETE` | `/admin/providers` | Provider management |
+| `POST` | `/admin/providers/:id/test` | Test provider health |
+| `GET/POST/DELETE` | `/admin/providers/:id/models` | Model management |
+| `POST` | `/admin/providers/:id/sync-models` | Import models from the provider |
+| `GET/POST` | `/admin/credentials/provider/:providerId` | Credential management |
+| `PATCH/DELETE` | `/admin/credentials/:id` | Update / delete credential |
+| `GET/POST/PATCH/DELETE` | `/admin/projects` | Project management |
+| `GET/POST` | `/admin/api-keys/project/:projectId` | List / generate project API keys |
+| `DELETE` | `/admin/api-keys/:id` | Revoke API key |
 | `GET` | `/admin/analytics/*` | Usage analytics |
 | `GET` | `/admin/audit-logs` | Audit log viewer |
 
@@ -133,7 +167,7 @@ AI_API_KEY=dvai_your_api_key
 |----------|------|-------|
 | OpenAI | `openai` | GPT-4o, GPT-4, GPT-3.5 |
 | Anthropic | `anthropic` | Claude 4, Claude 3.5 |
-| Google | `google` | Gemini Pro, Gemini Flash |
+| Google | `google` | Gemini 2.5 Flash/Pro, Gemma (free tier key from Google AI Studio) |
 | Groq | `groq` | LLaMA, Mixtral (fast inference) |
 | Ollama Cloud | `ollama` | Remote/Cloud Ollama API (Llama 3, DeepSeek, Mistral) |
 
@@ -143,7 +177,7 @@ AI_API_KEY=dvai_your_api_key
 - **Smart Routing** — Automatically selects the best provider based on health, quota, and latency
 - **Credential Rotation** — Rotates between multiple credentials per provider
 - **Response Caching** — Redis-based caching with SHA-256 keys
-- **Request Deduplication** — Coalesces identical in-flight requests
+- **Request Deduplication** — Coalesces identical in-flight requests (per gateway instance)
 - **Retry & Backoff** — Exponential backoff with jitter, automatic failover on 429
 - **Usage Tracking** — Per-project, per-provider, per-model analytics
 - **Quota Management** — Track and enforce per-credential quotas
@@ -180,7 +214,6 @@ devai-gateway/
 │   │   │   ├── routes/       # API routes
 │   │   │   ├── services/     # Business logic
 │   │   │   └── types/        # Shared types
-│   │   └── drizzle/          # Migration files
 │   │
 │   └── dashboard/        # Next.js admin UI
 │       └── src/
@@ -188,6 +221,7 @@ devai-gateway/
 │           ├── components/   # UI components
 │           └── lib/          # Utilities
 │
+├── scripts/e2e.sh       # End-to-end smoke test
 ├── docker-compose.yml
 ├── .env.example
 └── package.json
@@ -217,3 +251,11 @@ devai-gateway/
 ## License
 
 Private — Internal use only.
+
+## Deployment (free tiers)
+
+- **Database:** [Neon](https://neon.tech) free plan. **Redis:** [Upstash](https://upstash.com) free plan (use the `rediss://` TCP URL).
+- **Gateway:** deploy `packages/gateway` to Vercel (root directory `packages/gateway`; `api/index.ts` + `vercel.json` are included).
+  Env vars: `DATABASE_URL`, `REDIS_URL`, `MASTER_ENCRYPTION_KEY`, `ADMIN_API_KEY`, `NODE_ENV=production`, optional `ALLOWED_ORIGINS`.
+- **Dashboard:** deploy `packages/dashboard` to Vercel (root directory `packages/dashboard`). Env var: `NEXT_PUBLIC_API_URL` = your gateway URL.
+- Run `npm run db:push` once against the production `DATABASE_URL`.
