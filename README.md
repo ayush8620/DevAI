@@ -129,6 +129,66 @@ AI_BASE_URL=http://localhost:3001/v1
 AI_API_KEY=dvai_your_api_key
 ```
 
+## Routing modes
+
+Every app (project) has a routing mode. Pick it in the dashboard (**Projects → your app → Routing**) or override it per request.
+
+| Mode | What happens | Cost |
+|------|--------------|------|
+| `single` (default) | One provider at a time, in priority order. If it fails (5xx, 429, timeout, network error, bad credential, empty answer), the next one is tried automatically. | 1 call (more only on failure) |
+| `fastest` | Sends to all selected providers at once, returns the first valid answer and cancels the rest. | Up to N calls |
+| `best` | Sends to all selected providers, waits for their answers (bounded by the timeout), and a judge model picks the best one. If the judge fails, the most complete answer is used. | N calls + 1 judge call |
+
+Failed or slow providers never fail the request as long as one succeeds. If all fail you get `502 all_providers_failed` with every attempt listed.
+
+**Circuit breaker:** a provider/model that just failed with 5xx, timeout, network or auth errors is skipped for 60 s (30 s for 429). Providers that failed their background health check are skipped for 5 minutes. Skipped targets show up as `"status": "skipped"`.
+
+### Per-app defaults (admin API)
+
+```bash
+curl -X PATCH http://localhost:3001/admin/projects/<projectId> \
+  -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+  -d '{"routing": {
+        "mode": "single",
+        "providers": ["my-groq:llama-3.1-8b-instant", {"provider": "my-gemini", "model": "gemini-2.5-flash"}],
+        "judge": "my-gemini:gemini-2.5-flash-lite",
+        "timeoutMs": 30000
+      }}'
+```
+
+`providers` is the priority order (for `single`) or the participants (for `fastest`/`best`). Each entry is a provider id, name or type, optionally followed by `:model`. If you leave it out, every active provider that supports the requested model is used, ordered by the provider's `config.priority` (higher first) and then by recent latency. The `judge` defaults to the first provider in the list.
+
+### Per-request override
+
+Use the `x-devai-mode: fastest` header, or add a `devai` field to the body. The body wins over the header, and the header wins over the app default:
+
+```json
+{
+  "model": "auto",
+  "messages": [{"role": "user", "content": "Explain binary search"}],
+  "devai": { "mode": "best", "providers": ["gem-flash:gemini-2.5-flash", "gem-lite:gemini-2.5-flash-lite"], "timeoutMs": 20000 }
+}
+```
+
+### Response
+
+Response headers: `x-devai-mode`, `x-devai-provider` (`<provider name>/<model>`), `x-devai-fallbacks` (failed attempts before the answer). The body is the usual OpenAI-style response plus a `devai` object:
+
+```json
+"devai": {
+  "mode": "best", "provider": "gem-flash", "model": "gemini-2.5-flash", "fallbacks": 0, "latency_ms": 3900,
+  "candidates": [
+    {"provider": "gem-lite", "model": "gemini-2.5-flash-lite", "status": "success", "latency_ms": 397, "usage": {"total_tokens": 63}},
+    {"provider": "gem-flash", "model": "gemini-2.5-flash", "status": "success", "latency_ms": 3374, "selected": true, "usage": {"total_tokens": 631}}
+  ],
+  "judge": {"method": "judge", "provider": "gem-flash", "model": "gemini-2.5-flash", "reason": "Candidate 2 is more complete."}
+}
+```
+
+Every provider call (including cancelled ones and the judge call) is saved as its own usage record, with its tokens, latency and status (200 ok, 499 cancelled, 502 error, 504 timeout).
+
+> Adding routing creates a new `routing` column on `projects`, so run `npm run db:push` after upgrading.
+
 ## API Endpoints
 
 ### Public
@@ -155,7 +215,7 @@ AI_API_KEY=dvai_your_api_key
 | `POST` | `/admin/providers/:id/sync-models` | Import models from the provider |
 | `GET/POST` | `/admin/credentials/provider/:providerId` | Credential management |
 | `PATCH/DELETE` | `/admin/credentials/:id` | Update / delete credential |
-| `GET/POST/PATCH/DELETE` | `/admin/projects` | Project management |
+| `GET/POST/PATCH/DELETE` | `/admin/projects` | Project management (PATCH accepts `routing`) |
 | `GET/POST` | `/admin/api-keys/project/:projectId` | List / generate project API keys |
 | `DELETE` | `/admin/api-keys/:id` | Revoke API key |
 | `GET` | `/admin/analytics/*` | Usage analytics |
@@ -175,6 +235,8 @@ AI_API_KEY=dvai_your_api_key
 
 - **Unified API** — OpenAI-compatible endpoint for all providers
 - **Smart Routing** — Automatically selects the best provider based on health, quota, and latency
+- **Automatic Failover** — Retries on the next provider in priority order, with a circuit breaker for providers that are down
+- **Parallel Modes** — `fastest` (first answer wins) or `best` (an LLM judge picks the best answer), selectable per app or per request
 - **Credential Rotation** — Rotates between multiple credentials per provider
 - **Response Caching** — Redis-based caching with SHA-256 keys
 - **Request Deduplication** — Coalesces identical in-flight requests (per gateway instance)
