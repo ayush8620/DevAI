@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowRight, Github } from 'lucide-react';
 import { clerkEnabled, SIGN_IN_URL } from '@/lib/clerk';
 import { Logo, LogoMark } from '@/components/brand/logo';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
 
 export const GITHUB = 'https://github.com/ayush8620/DevAI';
 
@@ -29,12 +30,13 @@ export function SiteHeader({ active, badge, wide }: { active?: '/docs' | '/prici
           <a href={GITHUB} target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors">GitHub</a>
         </nav>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           {clerkEnabled && (
             <Link href={SIGN_IN_URL} className="hidden sm:inline-flex rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Sign in
             </Link>
           )}
-          <Link href="/dashboard" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary-hover">
             <span className="hidden sm:inline">Open dashboard</span><span className="sm:hidden">Dashboard</span> <ArrowRight className="h-4 w-4" />
           </Link>
         </div>

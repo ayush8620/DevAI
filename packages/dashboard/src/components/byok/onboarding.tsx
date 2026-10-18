@@ -19,7 +19,7 @@ export function ByokOnboarding({ nextStep, onAddKey, compact }: { nextStep: Onbo
   const current = nextStep === 'add_provider_key' ? 0 : 1;
   return (
     <section aria-label="Get started" className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card to-card p-5 sm:p-7 shadow-sm">
-      <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-primary/10 dark:bg-primary/20 blur-3xl" />
       <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="max-w-xl">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Bring your own key</p>
@@ -33,11 +33,11 @@ export function ByokOnboarding({ nextStep, onAddKey, compact }: { nextStep: Onbo
           </p>
         </div>
         {onAddKey ? (
-          <button onClick={onAddKey} className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 lg:self-auto">
+          <button onClick={onAddKey} className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary-hover lg:self-auto">
             {current === 0 ? 'Add a provider key' : 'Create API key'} <ArrowRight className="h-4 w-4" />
           </button>
         ) : (
-          <Link href={current === 0 ? '/dashboard/pool#add-key' : '/dashboard/pool#api-key'} className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 lg:self-auto">
+          <Link href={current === 0 ? '/dashboard/pool#add-key' : '/dashboard/pool#api-key'} className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary-hover lg:self-auto">
             {current === 0 ? 'Add your first provider key' : 'Create API key'} <ArrowRight className="h-4 w-4" />
           </Link>
         )}
@@ -50,7 +50,7 @@ export function ByokOnboarding({ nextStep, onAddKey, compact }: { nextStep: Onbo
             return (
               <li key={s.id} className={`rounded-xl border p-4 ${active ? 'border-primary/50 bg-background/70' : 'bg-background/40'}`}>
                 <div className="flex items-center gap-2">
-                  <span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-semibold ${done ? 'bg-green-500/15 text-green-500' : active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                  <span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-semibold ${done ? 'bg-green-500/15 text-ok' : active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
                     {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
                   </span>
                   <span className="text-sm font-semibold">{s.title}</span>

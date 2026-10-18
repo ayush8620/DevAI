@@ -10,6 +10,8 @@ import { adminApiKeyRoutes } from './routes/admin/apiKeys.js';
 import { adminAnalyticsRoutes } from './routes/admin/analytics.js';
 import { adminAuditRoutes } from './routes/admin/audit.js';
 import { adminMeRoutes } from './routes/admin/me.js';
+import { adminCouponRoutes } from './routes/admin/coupons.js';
+import { userCouponRoutes } from './routes/user/coupons.js';
 import { userPoolRoutes } from './routes/user/pool.js';
 import { userKitRoutes } from './routes/user/kits.js';
 import { publicKitRoutes } from './routes/public/kits.js';
@@ -48,11 +50,13 @@ app.route('/admin/api-keys', adminApiKeyRoutes);
 app.route('/admin/analytics', adminAnalyticsRoutes);
 app.route('/admin/audit-logs', adminAuditRoutes);
 app.route('/admin/me', adminMeRoutes);
+app.route('/admin/coupons', adminCouponRoutes);
 
 // User routes (any signed-in Clerk user; each user only sees their own data)
 app.use('/user/*', userAuthMiddleware());
 app.route('/user/pool', userPoolRoutes);
 app.route('/user/kits', userKitRoutes);
+app.route('/user/coupons', userCouponRoutes);
 
 // Global error handler
 app.onError((err, c) => {

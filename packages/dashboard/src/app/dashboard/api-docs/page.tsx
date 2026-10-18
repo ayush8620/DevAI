@@ -80,12 +80,12 @@ console.log(completion.choices[0].message.content);`;
         <p className="text-sm text-muted-foreground">
           <strong className="text-foreground">Bring your own key:</strong> a key created under <a href="/dashboard/pool" className="text-primary hover:underline">Your keys</a> runs only on the provider keys you added there. With none added, requests return <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">400 no_provider_keys</code>.
         </p>
-        <div className="relative rounded-lg bg-zinc-950 p-4 font-mono text-xs text-zinc-100 dark:bg-zinc-900 border border-border">
+        <div className="relative rounded-lg bg-code p-4 font-mono text-xs text-code-foreground border border-border">
           <button
             onClick={() => copyToClipboard('Authorization: Bearer dvai_your_api_key', 'auth')}
-            className="absolute right-3 top-3 p-1.5 text-zinc-400 hover:text-white rounded bg-zinc-800"
+            className="absolute right-3 top-3 p-1.5 text-code-muted hover:text-code-foreground rounded bg-code-hover"
           >
-            {copiedKey === 'auth' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+            {copiedKey === 'auth' ? <Check className="h-3.5 w-3.5 text-ok" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
           <code>Authorization: Bearer dvai_your_api_key</code>
         </div>
@@ -100,12 +100,12 @@ console.log(completion.choices[0].message.content);`;
         <p className="text-sm text-muted-foreground">
           You only need to configure two environment variables in your applications. No code rewrites needed.
         </p>
-        <div className="relative rounded-lg bg-zinc-950 p-4 font-mono text-xs text-zinc-100 dark:bg-zinc-900 border border-border">
+        <div className="relative rounded-lg bg-code p-4 font-mono text-xs text-code-foreground border border-border">
           <button
             onClick={() => copyToClipboard(nodeExample, 'node')}
-            className="absolute right-3 top-3 p-1.5 text-zinc-400 hover:text-white rounded bg-zinc-800"
+            className="absolute right-3 top-3 p-1.5 text-code-muted hover:text-code-foreground rounded bg-code-hover"
           >
-            {copiedKey === 'node' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+            {copiedKey === 'node' ? <Check className="h-3.5 w-3.5 text-ok" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
           <pre className="overflow-x-auto"><code>{nodeExample}</code></pre>
         </div>
@@ -121,12 +121,12 @@ console.log(completion.choices[0].message.content);`;
           Route AI requests dynamically. When <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">model: &quot;auto&quot;</code> is used, the Gateway automatically picks the healthiest provider with remaining quota and lowest latency.
         </p>
 
-        <div className="relative rounded-lg bg-zinc-950 p-4 font-mono text-xs text-zinc-100 dark:bg-zinc-900 border border-border">
+        <div className="relative rounded-lg bg-code p-4 font-mono text-xs text-code-foreground border border-border">
           <button
             onClick={() => copyToClipboard(curlExample, 'curl')}
-            className="absolute right-3 top-3 p-1.5 text-zinc-400 hover:text-white rounded bg-zinc-800"
+            className="absolute right-3 top-3 p-1.5 text-code-muted hover:text-code-foreground rounded bg-code-hover"
           >
-            {copiedKey === 'curl' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+            {copiedKey === 'curl' ? <Check className="h-3.5 w-3.5 text-ok" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
           <pre className="overflow-x-auto"><code>{curlExample}</code></pre>
         </div>
@@ -141,12 +141,12 @@ console.log(completion.choices[0].message.content);`;
         <p className="text-sm text-muted-foreground">
           Send <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">&quot;stream&quot;: true</code> to get OpenAI-compatible Server-Sent Events. Failover happens before the first byte; usage is recorded when the stream ends.
         </p>
-        <div className="relative rounded-lg bg-zinc-950 p-4 font-mono text-xs text-zinc-100 dark:bg-zinc-900 border border-border">
+        <div className="relative rounded-lg bg-code p-4 font-mono text-xs text-code-foreground border border-border">
           <button
             onClick={() => copyToClipboard(streamExample, 'stream')}
-            className="absolute right-3 top-3 p-1.5 text-zinc-400 hover:text-white rounded bg-zinc-800"
+            className="absolute right-3 top-3 p-1.5 text-code-muted hover:text-code-foreground rounded bg-code-hover"
           >
-            {copiedKey === 'stream' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+            {copiedKey === 'stream' ? <Check className="h-3.5 w-3.5 text-ok" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
           <pre className="overflow-x-auto"><code>{streamExample}</code></pre>
         </div>
@@ -161,7 +161,7 @@ console.log(completion.choices[0].message.content);`;
         <p className="text-sm text-muted-foreground">
           A key that is rate limited (30s), invalid (5 min), out of quota (10 min) or failing (60s) is cooled down on its own and the same request is retried with the provider&apos;s next key, before DevAI moves to another provider.
         </p>
-        <div className="rounded-lg bg-zinc-950 p-4 font-mono text-xs text-zinc-100 dark:bg-zinc-900 border border-border">
+        <div className="rounded-lg bg-code p-4 font-mono text-xs text-code-foreground border border-border">
           <pre className="overflow-x-auto"><code>{keysExample}</code></pre>
         </div>
       </section>
@@ -175,7 +175,7 @@ console.log(completion.choices[0].message.content);`;
         <p className="text-sm text-muted-foreground">
           Public endpoint to verify Gateway uptime, Redis status, and provider health states.
         </p>
-        <div className="rounded-lg bg-zinc-950 p-4 font-mono text-xs text-zinc-100 dark:bg-zinc-900 border border-border">
+        <div className="rounded-lg bg-code p-4 font-mono text-xs text-code-foreground border border-border">
           <code>curl {API_URL}/v1/health</code>
         </div>
       </section>

@@ -30,7 +30,7 @@ export const clerkAppearance = {
     // value as --border in both themes) for anything rendered inside Clerk components.
     colorBorder: 'hsl(var(--input))',
     colorRing: 'hsl(var(--ring))',
-    colorDanger: 'hsl(0 84.2% 60.2%)',
+    colorDanger: 'hsl(var(--destructive))',
     borderRadius: '0.5rem',
     fontFamily: 'inherit',
   },
@@ -42,7 +42,7 @@ export const clerkAppearance = {
     socialButtonsBlockButtonText: '!font-medium',
     formFieldInput: '!border !border-input !bg-background !shadow-none focus:!ring-2 focus:!ring-ring',
     dividerLine: '!bg-input',
-    formButtonPrimary: '!bg-primary hover:!bg-primary/90 !text-primary-foreground !shadow',
+    formButtonPrimary: '!bg-primary hover:!bg-primary-hover !text-primary-foreground !shadow',
   },
   options: {
     // Full-width "Continue with Google" / "Continue with GitHub" buttons above the email form.

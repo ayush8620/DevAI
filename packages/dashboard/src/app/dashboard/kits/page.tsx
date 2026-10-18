@@ -17,7 +17,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
   return (
     <button type="button" onClick={() => { navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); }} className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] hover:bg-muted" aria-label={label}>
-      {done ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}{done ? 'Copied' : 'Copy'}
+      {done ? <Check className="h-3 w-3 text-ok" /> : <Copy className="h-3 w-3" />}{done ? 'Copied' : 'Copy'}
     </button>
   );
 }
@@ -67,12 +67,12 @@ export default function KitsPage() {
         <p className="text-muted-foreground mt-1 max-w-2xl">Hand a team temporary API keys with a hard request or token cap, an end date and an allowed-model list. Traffic runs on your own provider keys, and the gateway cuts it off at the cap or the deadline.</p>
       </div>
 
-      {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-400"><AlertTriangle className="h-4 w-4 mt-0.5" />{error}</div>}
+      {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-bad"><AlertTriangle className="h-4 w-4 mt-0.5" />{error}</div>}
 
       {data && !canCreate && (
         <div className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm">Hackathon kits are included in the <strong>Team</strong> plan. You are on <span className="capitalize">{data.plan}</span>.</p>
-          <Link href="/dashboard/billing" className="rounded-lg bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground hover:bg-primary/90">Upgrade to Team</Link>
+          <Link href="/dashboard/billing" className="rounded-lg bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground hover:bg-primary-hover">Upgrade to Team</Link>
         </div>
       )}
 
@@ -82,7 +82,7 @@ export default function KitsPage() {
             <h2 className="font-semibold">“{created.name}” is live: save these keys now</h2>
             <button onClick={() => setCreated(null)} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
           </div>
-          <p className="text-xs text-amber-500">Each key is shown only once. Give one to each team member.</p>
+          <p className="text-xs text-warn">Each key is shown only once. Give one to each team member.</p>
           <ul className="grid gap-2 sm:grid-cols-2">
             {created.keys.map((k: any) => (
               <li key={k.id} className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2">
@@ -126,8 +126,8 @@ export default function KitsPage() {
           <label className="block text-xs font-medium text-muted-foreground">Allowed models (comma-separated, empty = any)
             <input value={form.allowedModels} onChange={e => setForm({ ...form, allowedModels: e.target.value })} className={`${input} font-mono text-xs`} placeholder="e.g. gpt-4o-mini, llama-3.1-8b-instant" />
           </label>
-          {formError && <p role="alert" className="text-xs text-red-400">{formError}</p>}
-          <button type="submit" disabled={busy || !canCreate} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-50">
+          {formError && <p role="alert" className="text-xs text-bad">{formError}</p>}
+          <button type="submit" disabled={busy || !canCreate} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary-hover disabled:opacity-50">
             {!canCreate ? 'Team plan required' : busy ? 'Creating…' : 'Create kit'}
           </button>
           <p className="text-[11px] text-muted-foreground">Requests use <Link href="/dashboard/pool" className="text-primary hover:underline">your own provider keys</Link>. A kit can last up to 30 days.</p>
@@ -153,7 +153,7 @@ export default function KitsPage() {
                     <Link href={`/kit/${k.shareToken}`} target="_blank" className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs hover:bg-muted"><Link2 className="h-3.5 w-3.5" />Share page</Link>
                     <CopyButton text={`${origin}/kit/${k.shareToken}`} label={`Copy share link for ${k.name}`} />
                     {k.status === 'active' && (
-                      <button onClick={async () => { if (confirm(`Revoke "${k.name}"? Its keys stop working immediately.`)) { await userApi.revokeKit(k.id).catch(e => setError(e.message)); load(); } }} className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10">
+                      <button onClick={async () => { if (confirm(`Revoke "${k.name}"? Its keys stop working immediately.`)) { await userApi.revokeKit(k.id).catch(e => setError(e.message)); load(); } }} className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs text-bad hover:bg-red-500/10">
                         <Ban className="h-3.5 w-3.5" />Revoke
                       </button>
                     )}

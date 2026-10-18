@@ -19,8 +19,8 @@ export function KitMeter({ label, used, cap }: { label: string; used: number; ca
 }
 
 export function kitStatusBadge(status: string) {
-  const cls = status === 'active' ? 'bg-green-500/10 text-green-500 border-green-500/30'
-    : status === 'expired' ? 'bg-amber-500/10 text-amber-500 border-amber-500/30'
-    : 'bg-red-500/10 text-red-400 border-red-500/30';
+  const cls = status === 'active' ? 'bg-green-500/10 text-ok border-green-500/30'
+    : status === 'expired' ? 'bg-amber-500/10 text-warn border-amber-500/30'
+    : 'bg-red-500/10 text-bad border-red-500/30';
   return <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${cls}`}>{status}</span>;
 }

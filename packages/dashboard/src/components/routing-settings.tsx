@@ -176,7 +176,7 @@ export function RoutingSettings({ projectId, routing, onSaved }: { projectId: st
           type="button"
           onClick={save}
           disabled={saving}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 inline-flex items-center gap-1.5 rounded-md text-sm font-medium disabled:opacity-50"
+          className="bg-primary text-primary-foreground hover:bg-primary-hover h-9 px-4 inline-flex items-center gap-1.5 rounded-md text-sm font-medium disabled:opacity-50"
         >
           {saved ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />} {saved ? 'Saved' : saving ? 'Saving…' : 'Save routing'}
         </button>

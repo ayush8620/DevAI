@@ -44,7 +44,7 @@ export default async function KitPage({ params }: { params: Promise<{ token: str
               <div className="rounded-xl border p-4"><Users className="h-4 w-4 text-primary" /><p className="mt-2 font-semibold">{kit.keyCount} keys</p><p className="text-xs text-muted-foreground">{kit.maxTeamSize ? `Team of up to ${kit.maxTeamSize}` : 'No team size limit'}</p></div>
               <div className="rounded-xl border p-4"><Cpu className="h-4 w-4 text-primary" /><p className="mt-2 font-semibold">{kit.allowedModels.length || 'Any'} model{kit.allowedModels.length === 1 ? '' : 's'}</p><p className="truncate text-xs text-muted-foreground font-mono" title={kit.allowedModels.join(', ')}>{kit.allowedModels.join(', ') || 'from the organiser’s pool'}</p></div>
             </div>
-            <div className="space-y-4 [&_.text-muted-foreground]:text-muted-foreground [&_.text-foreground]:text-zinc-100 [&_.bg-muted]:bg-white/10">
+            <div className="space-y-4">
               <KitMeter label="Requests" used={kit.usage.requests} cap={kit.requestCap} />
               <KitMeter label="Tokens" used={kit.usage.tokens} cap={kit.tokenCap} />
             </div>

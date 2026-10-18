@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Logo } from '@/components/brand/logo';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
 
 /**
  * Centered page frame for the sign-in / sign-up screens, in the landing page style.
@@ -9,10 +10,11 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-screen bg-background text-foreground flex flex-col">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" />
-      <header className="relative z-10 mx-auto flex h-16 w-full max-w-6xl items-center px-5 sm:px-8">
+      <header className="relative z-10 mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-5 sm:px-8">
         <Link href="/" aria-label="DevAI home" className="inline-flex items-center">
           <Logo />
         </Link>
+        <ThemeToggle />
       </header>
       <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-16">
         {children}

@@ -24,6 +24,19 @@ export function verifyPaymentSignature(
 }
 
 /**
+ * Razorpay Checkout success for a subscription:
+ * signature = HMAC_SHA256(razorpay_payment_id + "|" + razorpay_subscription_id, key_secret).
+ * Note the order: payment id first (the reverse of the order flow).
+ */
+export function verifySubscriptionSignature(
+  p: { paymentId: string; subscriptionId: string; signature: string },
+  keySecret: string,
+): boolean {
+  if (!keySecret || !p.paymentId || !p.subscriptionId || !p.signature) return false;
+  return safeEqualHex(hmacSha256Hex(`${p.paymentId}|${p.subscriptionId}`, keySecret), p.signature);
+}
+
+/**
  * Razorpay webhooks: x-razorpay-signature = HMAC_SHA256(raw request body, webhook_secret).
  * Must be computed on the exact raw body, before any JSON parsing.
  */

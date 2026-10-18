@@ -64,7 +64,7 @@ export default function SettingsPage() {
           </h2>
           {me ? (
             <p className="text-sm">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mr-2 rounded-full text-xs font-semibold bg-green-500/10 text-green-500">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mr-2 rounded-full text-xs font-semibold bg-green-500/10 text-ok">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Authorized
               </span>
               {me.method === 'clerk'
@@ -73,7 +73,7 @@ export default function SettingsPage() {
             </p>
           ) : (
             <p className="text-sm">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mr-2 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mr-2 rounded-full text-xs font-semibold bg-amber-500/10 text-warn">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Not authorized
               </span>
               <span className="text-muted-foreground">{meError || 'Checking…'}</span>
@@ -107,9 +107,9 @@ export default function SettingsPage() {
             />
             <button
               type="submit"
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shadow hover:bg-primary/90"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shadow hover:bg-primary-hover"
             >
-              {savedKey ? <Check className="h-3.5 w-3.5 text-green-300" /> : null}
+              {savedKey ? <Check className="h-3.5 w-3.5 text-ok" /> : null}
               {savedKey ? 'Saved' : 'Save Key'}
             </button>
           </form>
@@ -147,18 +147,18 @@ export default function SettingsPage() {
             <div className="divide-y text-sm">
               <div className="py-2.5 flex justify-between items-center">
                 <span className="text-muted-foreground">Gateway Status</span>
-                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${health.status === 'healthy' ? 'bg-green-500/10 text-green-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${health.status === 'healthy' ? 'bg-green-500/10 text-ok' : 'bg-amber-500/10 text-warn'}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${health.status === 'healthy' ? 'bg-green-500' : 'bg-amber-500'}`} />
                   {health.status}
                 </span>
               </div>
               <div className="py-2.5 flex justify-between items-center">
                 <span className="text-muted-foreground">Neon PostgreSQL</span>
-                <span className="font-medium text-green-500">{health.database || 'Connected'}</span>
+                <span className="font-medium text-ok">{health.database || 'Connected'}</span>
               </div>
               <div className="py-2.5 flex justify-between items-center">
                 <span className="text-muted-foreground">Upstash Redis</span>
-                <span className="font-medium text-green-500">{health.redis || 'Connected'}</span>
+                <span className="font-medium text-ok">{health.redis || 'Connected'}</span>
               </div>
               <div className="py-2.5 flex justify-between items-center">
                 <span className="text-muted-foreground">Process Uptime</span>

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
 // /dashboard requires a Clerk session. The landing page, the API docs (/docs), /pricing,
-// /sign-in, /sign-up and the Razorpay webhook stay public. (/api/billing/order and /verify
+// /sign-in, /sign-up and the Razorpay webhook stay public. (/api/billing/subscribe, /verify, /cancel and /coupon
 // check the session themselves and answer 401 instead of redirecting.)
 const isProtected = createRouteMatcher(['/dashboard(.*)']);
 const isPublic = createRouteMatcher(['/', '/docs(.*)', '/pricing(.*)', '/kit(.*)', '/sign-in(.*)', '/sign-up(.*)', '/api/billing/webhook(.*)']);

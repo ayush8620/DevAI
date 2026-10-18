@@ -7,7 +7,7 @@ import { CodeTabs } from '@/components/landing/code-tabs';
 import { SIGN_IN_URL } from '@/lib/clerk';
 import { SiteHeader, SiteFooter, GITHUB } from '@/components/landing/site-chrome';
 import { PlanCards } from '@/components/billing/plan-cards';
-import { paymentsEnabled } from '@/lib/billing/razorpay';
+import { purchasablePlans } from '@/lib/billing/razorpay';
 import { pageMetadata, jsonLd, SITE_URL, SITE_NAME, GITHUB_URL } from '@/lib/seo';
 
 export const metadata: Metadata = pageMetadata({
@@ -22,7 +22,7 @@ const FAQ: { q: string; a: string }[] = [
   { q: 'What is DevAI?', a: 'DevAI is an AI API gateway: one OpenAI-compatible endpoint that forwards your requests to OpenAI, Anthropic, Gemini, Groq, OpenRouter or Mistral, with automatic failover, key rotation, streaming, caching and usage analytics.' },
   { q: 'Do I need my own provider API keys?', a: 'Yes. DevAI is bring-your-own-key: you add your own provider keys, they are encrypted, and your requests run only on them. Provider usage is billed by each provider to your own account; DevAI never uses anyone else’s quota for you.' },
   { q: 'Does it work with the OpenAI SDK?', a: 'Yes. Point any OpenAI client at the DevAI base URL, use a dvai_ key, and set the model to "auto" or any model your keys support. Chat completions and streaming work the same way.' },
-  { q: 'How much does DevAI cost?', a: 'There is a Free plan. Paid plans are billed monthly in Indian rupees through Razorpay: Student ₹99, Pro ₹499 and Team ₹1,999. See the pricing page for limits.' },
+  { q: 'How much does DevAI cost?', a: 'There is a Free plan. Paid plans are subscriptions in Indian rupees through Razorpay, renewing automatically until you cancel: Student ₹99/month, Pro ₹499/month and Team ₹1,999/month, or yearly with two months free (₹990, ₹4,990 and ₹19,990). Cancel anytime; the plan stays until the end of the paid period.' },
   { q: 'Who can use the Student plan?', a: 'Students with a verified college email address (for example .edu or .ac.in). It adds more of your own keys, all key strategies, parallel routing and caching.' },
   { q: 'What are hackathon kits?', a: 'On the Team plan, an organiser can create temporary API keys for hackathon teams, with request and token caps, an expiry time and a share page. Kits run on the organiser’s own provider keys.' },
 ];
@@ -178,7 +178,7 @@ export default function LandingPage() {
         {/* Hero */}
         <section className="relative overflow-hidden px-5 sm:px-8 pt-16 pb-20 sm:pt-24 sm:pb-28">
           <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-            <div className="absolute left-1/2 top-[-10rem] h-[32rem] w-[52rem] -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
+            <div className="absolute left-1/2 top-[-10rem] h-[32rem] w-[52rem] -translate-x-1/2 rounded-full bg-primary/10 dark:bg-primary/20 blur-3xl" />
             <div className="absolute inset-0 bg-[linear-gradient(to_right,hsl(var(--border))_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border))_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_top,black_30%,transparent_70%)] opacity-40" />
           </div>
           <div className="mx-auto max-w-6xl grid gap-12 lg:grid-cols-[1.05fr_1fr] lg:items-center">
@@ -187,13 +187,13 @@ export default function LandingPage() {
                 <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Open source · Bring your own key · Free plan available
               </span>
               <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
-                One OpenAI-compatible endpoint for <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">many AI providers</span>
+                One OpenAI-compatible endpoint for <span className="bg-gradient-to-r from-brand-orange-text to-brand-orange-hover bg-clip-text text-transparent dark:from-brand-orange dark:to-orange-300">many AI providers</span>
               </h1>
               <p className="mt-6 max-w-xl text-base sm:text-lg text-muted-foreground leading-relaxed">
                 Bring your own keys from OpenAI, Anthropic, Gemini, Groq, OpenRouter or Mistral. DevAI routes each request over your keys only, fails over automatically, can race providers in parallel, and shows you every token in one dashboard.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90">
+                <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary-hover">
                   Open dashboard <ArrowRight className="h-4 w-4" />
                 </Link>
                 <a href={GITHUB} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-lg border bg-card px-5 py-3 text-sm font-semibold hover:bg-muted">
@@ -313,8 +313,8 @@ export default function LandingPage() {
         </Section>
 
         {/* Pricing */}
-        <Section id="pricing" eyebrow="Pricing" title="Simple monthly plans in rupees">
-          <PlanCards paymentsEnabled={paymentsEnabled()} signInUrl={SIGN_IN_URL} compact />
+        <Section id="pricing" eyebrow="Pricing" title="Simple subscriptions in rupees">
+          <PlanCards purchasable={purchasablePlans()} signInUrl={SIGN_IN_URL} compact />
           <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-muted-foreground">
             <p>You bring your own provider API keys; provider usage is billed by each provider under your own account.</p>
             <Link href="/pricing" className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline">Compare all features <ArrowRight className="h-4 w-4" /></Link>
@@ -342,7 +342,7 @@ export default function LandingPage() {
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">Stop wiring every provider by hand</h2>
             <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">Add your keys once, give each app a dvai_ key, and let DevAI handle failover, parallel routing and usage tracking.</p>
             <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
-              <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
+              <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-hover">
                 Open dashboard <ArrowRight className="h-4 w-4" />
               </Link>
               <a href={GITHUB} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-lg border bg-card px-5 py-3 text-sm font-semibold hover:bg-muted">

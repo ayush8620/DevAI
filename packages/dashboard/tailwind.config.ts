@@ -9,6 +9,15 @@ export default {
   ],
   theme: {
     extend: {
+      // text-primary is orange TEXT: a darker orange on light backgrounds for contrast
+      // (#C2410C on white, 5.2:1), a lighter one on dark (#FB923C). Backgrounds, borders
+      // and rings keep the logo orange via colors.primary.
+      textColor: {
+        primary: {
+          DEFAULT: "hsl(var(--primary-text))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
@@ -22,7 +31,17 @@ export default {
         },
         primary: {
           DEFAULT: "hsl(var(--primary))",
+          hover: "hsl(var(--primary-hover))",
           foreground: "hsl(var(--primary-foreground))",
+        },
+        // Exact brand colours, for the few places that need them outside the theme
+        brand: { orange: "#F97316", "orange-hover": "#EA580C", "orange-text": "#C2410C", ink: "#0A0A0A" },
+        code: {
+          DEFAULT: "hsl(var(--code))",
+          foreground: "hsl(var(--code-foreground))",
+          muted: "hsl(var(--code-muted))",
+          border: "hsl(var(--code-border))",
+          hover: "hsl(var(--code-hover))",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",

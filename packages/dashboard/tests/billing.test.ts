@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { verifyPaymentSignature, verifyWebhookSignature, hmacSha256Hex } from '../src/lib/billing/signature';
+import { verifyPaymentSignature, verifySubscriptionSignature, verifyWebhookSignature, hmacSha256Hex } from '../src/lib/billing/signature';
 import {
-  PLANS, getPlan, isPaidPlan, planAmountPaise, formatInr, isStudentEmail, currentPlanId, nextExpiry, BILLING_PERIOD_DAYS,
+  PLANS, getPlan, isPaidPlan, planAmountPaise, formatInr, isStudentEmail, currentPlanId, razorpayPlanEnvVar, razorpayPlanId,
+  configuredPlans, yearlyMonthlyEquivalent, yearlySavingsPercent, renews,
 } from '../src/lib/billing/plans';
 
 const SECRET = 'test_secret_not_a_real_key';
@@ -34,6 +35,26 @@ describe('Razorpay payment signature', () => {
   });
 });
 
+describe('Razorpay subscription signature', () => {
+  const paymentId = 'pay_29QQoUBi66xm2f';
+  const subscriptionId = 'sub_00000000000001';
+
+  it('accepts HMAC_SHA256(payment_id|subscription_id, key_secret)', () => {
+    const signature = sign(`${paymentId}|${subscriptionId}`);
+    expect(verifySubscriptionSignature({ paymentId, subscriptionId, signature }, SECRET)).toBe(true);
+  });
+
+  it('rejects the order-flow ordering, other secrets and tampering', () => {
+    const signature = sign(`${paymentId}|${subscriptionId}`);
+    expect(verifySubscriptionSignature({ paymentId: subscriptionId, subscriptionId: paymentId, signature }, SECRET)).toBe(false);
+    expect(verifySubscriptionSignature({ paymentId, subscriptionId, signature: sign(`${subscriptionId}|${paymentId}`) }, SECRET)).toBe(false);
+    expect(verifySubscriptionSignature({ paymentId, subscriptionId, signature }, 'other')).toBe(false);
+    expect(verifySubscriptionSignature({ paymentId, subscriptionId: 'sub_other', signature }, SECRET)).toBe(false);
+    expect(verifySubscriptionSignature({ paymentId, subscriptionId, signature: '' }, SECRET)).toBe(false);
+    expect(verifySubscriptionSignature({ paymentId, subscriptionId, signature }, '')).toBe(false);
+  });
+});
+
 describe('Razorpay webhook signature', () => {
   const body = JSON.stringify({ event: 'order.paid', payload: { order: { entity: { id: 'order_1', amount: 49900 } } } });
 
@@ -55,10 +76,31 @@ describe('plan pricing', () => {
     expect(PLANS.map(p => [p.id, p.priceInr])).toEqual([['free', 0], ['student', 99], ['pro', 499], ['team', 1999]]);
   });
 
-  it('computes order amounts in paise from the server config', () => {
+  it('computes amounts in paise from the server config, monthly and yearly', () => {
     expect(planAmountPaise('student')).toBe(9900);
     expect(planAmountPaise('pro')).toBe(49900);
     expect(planAmountPaise('team')).toBe(199900);
+    expect(planAmountPaise('student', 'yearly')).toBe(99000);
+    expect(planAmountPaise('pro', 'yearly')).toBe(499000);
+    expect(planAmountPaise('team', 'yearly')).toBe(1999000);
+    expect(() => planAmountPaise('pro', 'weekly' as any)).toThrow();
+  });
+
+  it('yearly = 10 months (2 months free, 17% off) with a per-month equivalent', () => {
+    for (const p of PLANS.filter(p => p.priceInr)) {
+      expect(p.priceInrYearly).toBe(p.priceInr * 10);
+      expect(yearlySavingsPercent(p)).toBe(17);
+    }
+    expect(yearlyMonthlyEquivalent(getPlan('pro')!)).toBe(416);
+  });
+
+  it('reads Razorpay plan ids from RAZORPAY_PLAN_ID_* env vars', () => {
+    expect(razorpayPlanEnvVar('pro', 'monthly')).toBe('RAZORPAY_PLAN_ID_PRO');
+    expect(razorpayPlanEnvVar('team', 'yearly')).toBe('RAZORPAY_PLAN_ID_TEAM_YEARLY');
+    const env = { RAZORPAY_PLAN_ID_PRO: ' plan_pro ', RAZORPAY_PLAN_ID_PRO_YEARLY: '' };
+    expect(razorpayPlanId('pro', 'monthly', env)).toBe('plan_pro');
+    expect(razorpayPlanId('pro', 'yearly', env)).toBe('');
+    expect(configuredPlans(env)).toEqual({ student_monthly: false, student_yearly: false, pro_monthly: true, pro_yearly: false, team_monthly: false, team_yearly: false });
   });
 
   it('refuses free, unknown and non-string plans', () => {
@@ -95,18 +137,33 @@ describe('student email check', () => {
 
 describe('current plan', () => {
   const now = new Date('2026-10-18T08:00:00Z');
-  it('is free without an active, unexpired record', () => {
+  it('is free without a paid, unexpired record', () => {
     expect(currentPlanId(undefined, now)).toBe('free');
     expect(currentPlanId({ plan: 'pro', status: 'active', expiresAt: '2026-10-01T00:00:00Z' }, now)).toBe('free');
-    expect(currentPlanId({ plan: 'gold', status: 'active', expiresAt: '2027-01-01T00:00:00Z' }, now)).toBe('free');
+    expect(currentPlanId({ plan: 'gold', status: 'active', expiresAt: '2027-01-01T00:00:00Z' } as any, now)).toBe('free');
+    expect(currentPlanId({ plan: 'pro', status: 'created', expiresAt: '2027-01-01T00:00:00Z' }, now)).toBe('free');
   });
-  it('returns the paid plan while it is active', () => {
-    expect(currentPlanId({ plan: 'pro', status: 'active', expiresAt: '2026-11-01T00:00:00Z' }, now)).toBe('pro');
+  it('keeps the paid plan until the period ends, also when cancelled or halted', () => {
+    for (const status of ['active', 'pending', 'halted', 'cancelled', 'completed'] as const) {
+      expect(currentPlanId({ plan: 'pro', status, expiresAt: '2026-11-01T00:00:00Z' }, now)).toBe('pro');
+    }
   });
-  it('adds 30 days from now, or from the current expiry when renewing early', () => {
-    const day = 24 * 60 * 60 * 1000;
-    expect(nextExpiry(undefined, now).getTime()).toBe(now.getTime() + BILLING_PERIOD_DAYS * day);
-    const exp = new Date(now.getTime() + 5 * day);
-    expect(nextExpiry({ expiresAt: exp.toISOString() }, now).getTime()).toBe(exp.getTime() + BILLING_PERIOD_DAYS * day);
+  it('renews only while active and not cancelled', () => {
+    expect(renews({ status: 'active' })).toBe(true);
+    expect(renews({ status: 'active', cancelAtPeriodEnd: true })).toBe(false);
+    expect(renews({ status: 'halted' })).toBe(false);
+    expect(renews({ status: 'cancelled' })).toBe(false);
+  });
+});
+
+describe('scripts/razorpay-create-plans.mjs', () => {
+  it('creates plans at the same prices and env var names as plans.ts', async () => {
+    const { PLAN_DEFS, envVarFor } = await import('../../../scripts/razorpay-create-plans.mjs');
+    const expected = PLANS.filter(p => p.priceInr).flatMap(p => [
+      { plan: p.id, period: 'monthly', amountPaise: p.priceInr * 100 },
+      { plan: p.id, period: 'yearly', amountPaise: p.priceInrYearly * 100 },
+    ]);
+    expect(PLAN_DEFS.map((d: any) => ({ plan: d.plan, period: d.period, amountPaise: d.amountPaise }))).toEqual(expected);
+    for (const d of PLAN_DEFS as any[]) expect(envVarFor(d)).toBe(razorpayPlanEnvVar(d.plan, d.period));
   });
 });

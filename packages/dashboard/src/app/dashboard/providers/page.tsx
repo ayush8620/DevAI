@@ -25,12 +25,12 @@ const KEY_STRATEGIES: { value: KeyStrategy; label: string; help: string }[] = [
 ];
 
 const LIVE_STATUS: Record<string, { label: string; cls: string }> = {
-  active: { label: 'active', cls: 'bg-green-500/10 text-green-500' },
-  rate_limited: { label: 'rate limited', cls: 'bg-amber-500/10 text-amber-500' },
-  cooling_down: { label: 'cooling down', cls: 'bg-amber-500/10 text-amber-500' },
-  quota_exhausted: { label: 'quota exhausted', cls: 'bg-red-500/10 text-red-500' },
-  invalid: { label: 'invalid key', cls: 'bg-red-500/10 text-red-500' },
-  unhealthy: { label: 'failed health check', cls: 'bg-red-500/10 text-red-500' },
+  active: { label: 'active', cls: 'bg-green-500/10 text-ok' },
+  rate_limited: { label: 'rate limited', cls: 'bg-amber-500/10 text-warn' },
+  cooling_down: { label: 'cooling down', cls: 'bg-amber-500/10 text-warn' },
+  quota_exhausted: { label: 'quota exhausted', cls: 'bg-red-500/10 text-bad' },
+  invalid: { label: 'invalid key', cls: 'bg-red-500/10 text-bad' },
+  unhealthy: { label: 'failed health check', cls: 'bg-red-500/10 text-bad' },
   disabled: { label: 'disabled', cls: 'bg-zinc-500/10 text-zinc-400' },
 };
 
@@ -333,7 +333,7 @@ export default function ProvidersPage() {
         </div>
         <button
           onClick={() => setShowAddProvider(true)}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 inline-flex items-center gap-2 rounded-lg text-sm font-medium shadow"
+          className="bg-primary text-primary-foreground hover:bg-primary-hover h-10 px-4 py-2 inline-flex items-center gap-2 rounded-lg text-sm font-medium shadow"
         >
           <Plus className="h-4 w-4" /> Add Provider
         </button>
@@ -432,7 +432,7 @@ export default function ProvidersPage() {
                 </p>
                 <button
                   onClick={() => setShowAddCred(true)}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 py-1 inline-flex items-center gap-1.5 rounded-md text-xs font-medium shadow-sm shrink-0"
+                  className="bg-primary text-primary-foreground hover:bg-primary-hover h-8 px-3 py-1 inline-flex items-center gap-1.5 rounded-md text-xs font-medium shadow-sm shrink-0"
                 >
                   <Plus className="h-3.5 w-3.5" /> {credentials.length ? 'Add Another Key' : 'Add Credential'}
                 </button>
@@ -517,7 +517,7 @@ export default function ProvidersPage() {
                             </button>
                             <button
                               onClick={() => toggleKey(c)}
-                              className={`p-1 rounded inline-flex items-center ${c.enabled ? 'text-muted-foreground hover:text-amber-500' : 'text-amber-500 hover:text-green-500'}`}
+                              className={`p-1 rounded inline-flex items-center ${c.enabled ? 'text-muted-foreground hover:text-amber-600' : 'text-warn hover:text-green-600'}`}
                               title={c.enabled ? 'Disable key' : 'Enable key'}
                             >
                               <Power className="h-4 w-4" />
@@ -559,7 +559,7 @@ export default function ProvidersPage() {
                   </button>
                   <button
                     onClick={() => setShowAddModel(true)}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 py-1 inline-flex items-center gap-1.5 rounded-md text-xs font-medium shadow-sm"
+                    className="bg-primary text-primary-foreground hover:bg-primary-hover h-8 px-3 py-1 inline-flex items-center gap-1.5 rounded-md text-xs font-medium shadow-sm"
                   >
                     <Plus className="h-3.5 w-3.5" /> Add Model
                   </button>
@@ -594,7 +594,7 @@ export default function ProvidersPage() {
                           <td className="py-3 font-mono font-medium text-xs text-primary">{m.modelId}</td>
                           <td className="py-3">{m.displayName || m.modelId}</td>
                           <td className="py-3">
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-green-500/10 text-green-500">
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-green-500/10 text-ok">
                               Enabled
                             </span>
                           </td>
@@ -672,7 +672,7 @@ export default function ProvidersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary-hover"
                 >
                   Save Provider
                 </button>
@@ -721,7 +721,7 @@ export default function ProvidersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary-hover"
                 >
                   Encrypt & Save
                 </button>
@@ -771,7 +771,7 @@ export default function ProvidersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary-hover"
                 >
                   Add Model
                 </button>

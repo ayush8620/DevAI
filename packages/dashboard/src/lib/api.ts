@@ -145,6 +145,13 @@ export const api = {
   // Who the gateway thinks we are (Clerk user or admin key)
   getMe: () => fetchApi('/admin/me').then(r => r.data || r),
 
+  // Promo codes (admin)
+  getCoupons: () => fetchApi('/admin/coupons').then(r => r.data || r),
+  createCoupon: (data: Record<string, unknown>) =>
+    fetchApi('/admin/coupons', { method: 'POST', body: JSON.stringify(data) }).then(r => r.data || r),
+  updateCoupon: (id: string, data: { status?: 'active' | 'disabled'; expiresAt?: string | null; maxRedemptions?: number | null }) =>
+    fetchApi(`/admin/coupons/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then(r => r.data || r),
+
   // Analytics
   getOverview: () => fetchApi('/admin/analytics/overview').then(r => r.data || r),
   getRecentRequests: () => fetchApi('/admin/analytics/recent-requests').then(r => r.data || r),

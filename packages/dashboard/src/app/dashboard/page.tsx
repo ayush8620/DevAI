@@ -11,9 +11,9 @@ function KeyHealthCard({ pool }: { pool: any }) {
   const keys: any[] = pool?.keys ?? [];
   const count = (h: string) => keys.filter(k => k.health === h).length;
   const items = [
-    { label: 'Healthy', n: count('healthy') + count('unused'), cls: 'text-green-500' },
-    { label: 'Cooling down', n: count('cooling_down') + count('quota_exhausted'), cls: 'text-amber-500' },
-    { label: 'Error', n: count('error'), cls: 'text-red-400' },
+    { label: 'Healthy', n: count('healthy') + count('unused'), cls: 'text-ok' },
+    { label: 'Cooling down', n: count('cooling_down') + count('quota_exhausted'), cls: 'text-warn' },
+    { label: 'Error', n: count('error'), cls: 'text-bad' },
     { label: 'Disabled', n: count('disabled'), cls: 'text-muted-foreground' },
   ];
   const providers = Array.from(new Set(keys.map(k => String(k.providerName))));

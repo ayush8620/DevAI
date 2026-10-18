@@ -8,11 +8,11 @@ import { ByokOnboarding } from '@/components/byok/onboarding';
 
 type Health = 'healthy' | 'cooling_down' | 'error' | 'disabled' | 'quota_exhausted' | 'unused';
 const HEALTH: Record<Health, { label: string; cls: string }> = {
-  healthy: { label: 'Healthy', cls: 'bg-green-500/10 text-green-500 border-green-500/30' },
+  healthy: { label: 'Healthy', cls: 'bg-green-500/10 text-ok border-green-500/30' },
   unused: { label: 'Not used yet', cls: 'bg-muted text-muted-foreground' },
-  cooling_down: { label: 'Cooling down', cls: 'bg-amber-500/10 text-amber-500 border-amber-500/30' },
-  quota_exhausted: { label: 'Quota used', cls: 'bg-amber-500/10 text-amber-500 border-amber-500/30' },
-  error: { label: 'Error', cls: 'bg-red-500/10 text-red-400 border-red-500/30' },
+  cooling_down: { label: 'Cooling down', cls: 'bg-amber-500/10 text-warn border-amber-500/30' },
+  quota_exhausted: { label: 'Quota used', cls: 'bg-amber-500/10 text-warn border-amber-500/30' },
+  error: { label: 'Error', cls: 'bg-red-500/10 text-bad border-red-500/30' },
   disabled: { label: 'Disabled', cls: 'bg-muted text-muted-foreground' },
 };
 const STRATEGIES = [
@@ -101,7 +101,7 @@ export default function PoolPage() {
 
       {data?.onboarding && <ByokOnboarding nextStep={data.onboarding.nextStep} onAddKey={data.onboarding.nextStep === 'add_provider_key' ? focusAddKey : createApiKey} />}
 
-      {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-400"><AlertTriangle className="h-4 w-4 mt-0.5" />{error}</div>}
+      {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-bad"><AlertTriangle className="h-4 w-4 mt-0.5" />{error}</div>}
 
       {/* Stretch stats */}
       <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
@@ -149,7 +149,7 @@ export default function PoolPage() {
               <KeyRound className="mx-auto mb-3 h-10 w-10 opacity-30" />
               <p className="font-medium text-foreground">No provider keys yet</p>
               <p className="mt-1">Add a key from OpenAI, Anthropic, Gemini, Groq, OpenRouter or Mistral to start. Requests use only your own keys.</p>
-              <button onClick={focusAddKey} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"><Plus className="h-4 w-4" /> Add your first provider key</button>
+              <button onClick={focusAddKey} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-hover"><Plus className="h-4 w-4" /> Add your first provider key</button>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -169,7 +169,7 @@ export default function PoolPage() {
                           const ck = checks[k.id]?.status ?? k.lastCheck;
                           if (!ck) return null;
                           const ok = ck !== 'unhealthy';
-                          return <div className={`mt-1 text-[11px] ${ok ? 'text-green-500' : 'text-red-400'}`} title={checks[k.id]?.error}>Test: {ok ? `passed${checks[k.id]?.latencyMs ? ` (${checks[k.id].latencyMs} ms)` : ''}` : 'failed'}</div>;
+                          return <div className={`mt-1 text-[11px] ${ok ? 'text-ok' : 'text-bad'}`} title={checks[k.id]?.error}>Test: {ok ? `passed${checks[k.id]?.latencyMs ? ` (${checks[k.id].latencyMs} ms)` : ''}` : 'failed'}</div>;
                         })()}
                         {k.lastError && k.health !== 'healthy' && <div className="mt-1 max-w-[220px] truncate text-[11px] text-muted-foreground" title={k.lastError}>{k.lastError}</div>}
                       </td>
@@ -181,10 +181,10 @@ export default function PoolPage() {
                           <Stethoscope className={`h-4 w-4 ${checking === k.id ? 'animate-pulse text-primary' : 'text-muted-foreground'}`} />
                         </button>
                         <button onClick={async () => { await userApi.updatePoolKey(k.id, { enabled: !k.enabled }).catch(e => setError(e.message)); load(); }} className="p-1.5 rounded-lg hover:bg-muted" title={k.enabled ? 'Disable' : 'Enable'} aria-label={k.enabled ? 'Disable key' : 'Enable key'}>
-                          <Power className={`h-4 w-4 ${k.enabled ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          <Power className={`h-4 w-4 ${k.enabled ? 'text-ok' : 'text-muted-foreground'}`} />
                         </button>
                         <button onClick={async () => { if (confirm(`Remove ${k.name}?`)) { await userApi.deletePoolKey(k.id).catch(e => setError(e.message)); load(); } }} className="p-1.5 rounded-lg hover:bg-muted" aria-label="Remove key">
-                          <Trash2 className="h-4 w-4 text-red-400" />
+                          <Trash2 className="h-4 w-4 text-bad" />
                         </button>
                       </td>
                     </tr>
@@ -214,8 +214,8 @@ export default function PoolPage() {
             <label className="block text-xs font-medium text-muted-foreground">Default model for &quot;auto&quot; (optional)
               <input value={form.defaultModel} onChange={e => setForm({ ...form, defaultModel: e.target.value })} className="mt-1 w-full bg-background border px-3 py-2 rounded-lg font-mono text-xs text-foreground" placeholder={provider?.defaultModel ?? ''} />
             </label>
-            {formError && <p role="alert" className="text-xs text-red-400">{formError}{atLimit && <> <Link href="/pricing" className="text-primary hover:underline">See plans</Link></>}</p>}
-            <button type="submit" disabled={busy || atLimit} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-50">
+            {formError && <p role="alert" className="text-xs text-bad">{formError}{atLimit && <> <Link href="/pricing" className="text-primary hover:underline">See plans</Link></>}</p>}
+            <button type="submit" disabled={busy || atLimit} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary-hover disabled:opacity-50">
               {atLimit ? `Plan limit reached (${limit})` : busy ? 'Adding…' : 'Add key'}
             </button>
             <p className="text-[11px] text-muted-foreground">Keys are encrypted (AES-256-GCM) and only shown as prefix + last 4. They are used only for your own requests.</p>
@@ -229,7 +229,7 @@ export default function PoolPage() {
             </div>
             {newKey && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
-                <p className="text-[11px] text-amber-500">Copy it now. It will not be shown again.</p>
+                <p className="text-[11px] text-warn">Copy it now. It will not be shown again.</p>
                 <div className="flex gap-2">
                   <input readOnly value={newKey} className="flex-1 min-w-0 bg-background border px-2 py-1.5 rounded font-mono text-[11px]" />
                   <button onClick={() => { navigator.clipboard.writeText(newKey); setCopied(true); setTimeout(() => setCopied(false), 1500); }} className="rounded bg-primary px-2 text-primary-foreground" aria-label="Copy key">
@@ -242,12 +242,12 @@ export default function PoolPage() {
               {(data?.apiKeys ?? []).filter((k: any) => k.status === 'active').map((k: any) => (
                 <li key={k.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <span><span className="font-mono">{k.keyPrefix}…</span> <span className="text-muted-foreground">{k.name}</span></span>
-                  <button onClick={async () => { await userApi.revokePoolApiKey(k.id); load(); }} className="text-red-400 hover:underline">Revoke</button>
+                  <button onClick={async () => { await userApi.revokePoolApiKey(k.id); load(); }} className="text-bad hover:underline">Revoke</button>
                 </li>
               ))}
             </ul>
             <p className="text-[11px] text-muted-foreground">Requests with this key use only your provider keys above. With no provider key they fail with <code>no_provider_keys</code>.</p>
-            <pre className="overflow-x-auto rounded-lg bg-zinc-950 p-3 text-[11px] text-zinc-100 font-mono">{`curl ${API_URL}/v1/chat/completions \\
+            <pre className="overflow-x-auto rounded-lg bg-code p-3 text-[11px] text-code-foreground font-mono">{`curl ${API_URL}/v1/chat/completions \\
   -H "Authorization: Bearer dvai_..." \\
   -H "Content-Type: application/json" \\
   -d '{"model":"auto","messages":[{"role":"user","content":"hi"}]}'`}</pre>

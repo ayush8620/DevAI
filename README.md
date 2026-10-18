@@ -355,36 +355,69 @@ The Settings page shows whether the gateway accepts the current session. The adm
 
 No JWT template is needed: the default session token is used, and the email is looked up on the server. If you prefer, add `"email": "{{user.primary_email_address}}"` under Clerk → Sessions → Customize session token, and the gateway will read it from the token instead.
 
-## Pricing & payments (Razorpay)
+## Pricing & subscriptions (Razorpay)
 
-Plans live in one file, [`packages/dashboard/src/lib/billing/plans.ts`](packages/dashboard/src/lib/billing/plans.ts):
+Plans live in one file, [`packages/dashboard/src/lib/billing/plans.ts`](packages/dashboard/src/lib/billing/plans.ts). Paid plans are **Razorpay Subscriptions** that renew automatically until cancelled. Yearly billing costs 10 months (2 months free, about 17% off).
 
-| Plan | Price | Requests / day | Projects | Provider keys |
-|------|-------|----------------|----------|---------------|
-| Free | ₹0 | 100 | 1 | 2 |
-| Student | ₹99 / month (verified `.edu` / `.ac.in` email) | 2,000 | 3 | 5 |
-| Pro | ₹499 / month | 20,000 | 10 | 20 |
-| Team | ₹1,999 / month | 100,000 | 50 | 100 |
+| Plan | Monthly | Yearly | Requests / day | Projects | Provider keys |
+|------|---------|--------|----------------|----------|---------------|
+| Free | ₹0 | ₹0 | 100 | 1 | 2 |
+| Student (verified `.edu` / `.ac.in` email) | ₹99 | ₹990 | 2,000 | 3 | 5 |
+| Pro | ₹499 | ₹4,990 | 20,000 | 10 | 20 |
+| Team | ₹1,999 | ₹19,990 | 100,000 | 50 | 100 |
 
-The public page is [`/pricing`](https://devai-dashboard-six.vercel.app/pricing); signed-in users manage their plan at `/dashboard/billing`. One payment buys 30 days (no auto-debit); paying again early extends the plan. The plan is stored on the Clerk user (`publicMetadata.billing`). The limits are plan allowances. The gateway enforces the personal key-pool size and hackathon-kit access; the other limits are not enforced yet.
+The public page is [`/pricing`](https://devai-dashboard-six.vercel.app/pricing) (Monthly / Yearly toggle); signed-in users manage their subscription at `/dashboard/billing` (current plan, status, renewal date, cancel, change plan). The subscription state is stored on the Clerk user (`publicMetadata.billing`: `plan`, `period`, `status`, `expiresAt` = end of the paid period, `subscriptionId`, `cancelAtPeriodEnd`, `scheduled`, `coupon`). The gateway reads `plan`/`status`/`expiresAt` to enforce the key-pool size and hackathon-kit access; the other limits are not enforced yet.
 
-How a payment works:
+How it works:
 
-1. `POST /api/billing/order` `{ planId }`: needs a Clerk session. The amount is taken from `plans.ts` on the server, never from the browser. The Student plan checks the account's verified emails.
-2. The browser opens Razorpay Checkout.js with the order id.
-3. `POST /api/billing/verify`: checks `HMAC_SHA256(order_id|payment_id, RAZORPAY_KEY_SECRET)`, reads the user and plan from the order's notes, and activates the plan.
-4. `POST /api/billing/webhook` (public): checks `x-razorpay-signature` = `HMAC_SHA256(raw body, RAZORPAY_WEBHOOK_SECRET)` and applies `order.paid` / `payment.captured` as a backup. Activation is idempotent.
+1. `POST /api/billing/subscribe` `{ planId, period, code? }` (Clerk session): creates a Razorpay subscription with `plan_id` from `RAZORPAY_PLAN_ID_*`, `total_count` 120 (monthly) / 10 (yearly), and notes `{ userId, planId, period, ... }`. Amounts never come from the browser. The Student plan checks the account's verified emails.
+2. The browser opens Checkout.js with `subscription_id`; the customer sets up UPI Autopay, a card or an eMandate.
+3. `POST /api/billing/verify`: checks `HMAC_SHA256(razorpay_payment_id + "|" + razorpay_subscription_id, RAZORPAY_KEY_SECRET)`, fetches the subscription, checks its `notes.userId`, and stores the plan.
+4. `POST /api/billing/webhook` (public): checks `x-razorpay-signature` = `HMAC_SHA256(raw body, RAZORPAY_WEBHOOK_SECRET)`, dedupes on `x-razorpay-event-id`, ignores events older than the last one applied, and updates the plan (`src/lib/billing/subscription.ts`, unit-tested):
 
-Environment variables (Vercel → dashboard project; nothing is needed on the gateway):
+| Event | Effect |
+|-------|--------|
+| `subscription.authenticated` | Mandate set up. Stored as a scheduled change if it starts later; active right away if the first period was paid upfront (promo code) |
+| `subscription.activated`, `subscription.charged` | `status: active`, `expiresAt` = `current_end`; clears a payment error |
+| `subscription.pending` | Renewal failing, Razorpay retries; plan kept until `expiresAt` |
+| `subscription.halted` | Retries exhausted; plan kept until `expiresAt`, then Free |
+| `subscription.cancelled`, `subscription.completed` | No renewal; plan kept until `expiresAt`, then Free |
+| `payment.failed` | Records the error on the Billing page (subscription found via the payment's invoice) |
+
+- **Cancel** (`POST /api/billing/cancel`): cancels at the end of the current cycle (`cancel_at_cycle_end: 1`). The user keeps the plan until the period ends.
+- **Change plan**: a new subscription. Upgrades (higher price per month) start now and cancel the old subscription immediately, **without proration** (unused days are not refunded). Downgrades and switches to a cheaper period start at the end of the current period (`start_at`; Razorpay takes a ₹5 refundable authorisation), and the old subscription is cancelled at cycle end once the new mandate is set up.
+- Old one-time 30-day plans keep working until they expire; buying a subscription then starts when they end.
+
+### Promo codes
+
+Admins create codes at `/dashboard/coupons` (gateway `/admin/coupons`, stored in the gateway database, migration `packages/gateway/drizzle/0003_coupons.sql`). A code has: percent (1-90%) or flat ₹ off, plans and billing periods it applies to, expiry, max redemptions, once per user, and **first payment only** or **every payment**. Customers enter it under **Have a code?**; the dashboard server validates and reserves it on the gateway (`/user/coupons/*`) with the user's Clerk session. Limits are enforced in single atomic SQL statements (a conditional counter update plus a partial unique index), so concurrent checkouts cannot exceed them. A reservation is held for 60 minutes and confirmed when the payment is verified.
+
+How the discount is applied (Razorpay has no API to create offers):
+
+- **First payment only**: the discounted first period is charged upfront (subscription `addons`) and the subscription's full-price billing starts one period later (`start_at`).
+- **Every payment**: the subscription uses a discounted Razorpay plan created on the fly through the Plans API (cached per server instance, so a few extra plans may appear in Razorpay).
+- **Razorpay offer**: if the code has a `razorpayOfferId` (an offer you created in Razorpay → Offers, with the same terms), the subscription is created with `offer_id` and Razorpay applies it.
+
+Limitations: no 100% discounts (Razorpay needs at least ₹1); first-payment codes cannot be combined with a downgrade that starts at period end; Razorpay lists `addons` as a legacy feature, so test first-payment codes in test mode, or use a Razorpay offer instead; if the browser is closed right after paying and `GATEWAY_ADMIN_API_KEY` is not set on the dashboard, the reservation is released after 60 minutes (the discount still applies; the use is not counted). Example (documentation only, nothing is seeded): `LAUNCH20`, 20% off the first payment, max 100 redemptions, once per user.
+
+### Environment variables (Vercel → dashboard project)
 
 | Variable | Value |
 |----------|-------|
 | `RAZORPAY_KEY_ID` | Key id from Razorpay → Account & Settings → API keys (`rzp_test_…` / `rzp_live_…`) |
 | `RAZORPAY_KEY_SECRET` | The matching key secret (server only) |
 | `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Same as `RAZORPAY_KEY_ID`, used by Checkout.js |
-| `RAZORPAY_WEBHOOK_SECRET` | Secret you set on the webhook (URL `https://<dashboard>/api/billing/webhook`, events `order.paid`, `payment.captured`) |
+| `RAZORPAY_PLAN_ID_STUDENT`, `RAZORPAY_PLAN_ID_PRO`, `RAZORPAY_PLAN_ID_TEAM` | Monthly plan ids |
+| `RAZORPAY_PLAN_ID_STUDENT_YEARLY`, `RAZORPAY_PLAN_ID_PRO_YEARLY`, `RAZORPAY_PLAN_ID_TEAM_YEARLY` | Yearly plan ids (optional; without them yearly shows "Payments coming soon") |
+| `RAZORPAY_WEBHOOK_SECRET` | Secret you set on the webhook |
+| `GATEWAY_ADMIN_API_KEY` | Optional, server only: the gateway `ADMIN_API_KEY`, so the webhook can confirm promo-code redemptions |
+| `GATEWAY_URL` | Optional: gateway URL for server-side calls (defaults to `NEXT_PUBLIC_API_URL`) |
 
-Without these keys (or without Clerk) the upgrade buttons show **Payments coming soon** and nothing calls Razorpay.
+Create the six plans with `RAZORPAY_KEY_ID=… RAZORPAY_KEY_SECRET=… node scripts/razorpay-create-plans.mjs` (prints the `RAZORPAY_PLAN_ID_*` lines; reuses matching plans on re-runs; `--dry-run` shows what it would create). Run it once with test keys and once with live keys.
+
+Webhook: Razorpay → Account & Settings → Webhooks → **Add new webhook**, URL `https://<dashboard>/api/billing/webhook`, the secret above, and these events: `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, `payment.failed`.
+
+Without the keys (or without Clerk, or without a plan id for a plan/period) the buttons show **Payments coming soon** and nothing calls Razorpay. The landing page's plan grid is static, so redeploy after adding keys.
 
 ## Bring your own key (BYOK)
 
@@ -432,6 +465,15 @@ psql "$DATABASE_URL" -f packages/gateway/drizzle/0002_byok.sql
 ```
 
 Existing shared (admin) providers and keys (`owner_user_id IS NULL`) keep working for the admin's own projects and are not changed.
+
+### Database migration (promo codes)
+
+Promo codes need two new tables (`coupons`, `coupon_redemptions`). Run this on Neon **before** deploying the gateway that serves `/admin/coupons` and `/user/coupons`. It is idempotent (`IF NOT EXISTS`), adds no rows and changes no existing data:
+
+```bash
+psql "$DATABASE_URL" -f packages/gateway/drizzle/0003_coupons.sql
+# or: cd packages/gateway && npm run db:push
+```
 
 ## API Endpoints
 

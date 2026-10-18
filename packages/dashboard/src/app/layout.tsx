@@ -58,7 +58,8 @@ export default function RootLayout({
   const page = (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+        {/* Light / dark: system preference by default, saved in localStorage, class set before paint (no flash). */}
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="theme" disableTransitionOnChange>
           {children}
         </ThemeProvider>
       </body>

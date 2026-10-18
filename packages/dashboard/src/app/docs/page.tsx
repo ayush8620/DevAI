@@ -357,10 +357,10 @@ function C({ children }: { children: React.ReactNode }) {
 }
 
 function Endpoint({ method, path, auth }: { method: string; path: string; auth?: string }) {
-  const color = method === 'GET' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-    : method === 'POST' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
-    : method === 'PATCH' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-    : 'bg-red-500/15 text-red-400 border-red-500/30';
+  // Monochrome + orange: POST (the main call) in the accent, the rest neutral; DELETE in red.
+  const color = method === 'POST' ? 'bg-primary/10 text-primary border-primary/30'
+    : method === 'DELETE' ? 'bg-red-500/10 text-bad border-red-500/30'
+    : 'bg-muted text-foreground border-border';
   return (
     <div className="mt-5 flex flex-wrap items-center gap-3 rounded-lg border bg-card px-4 py-3">
       <span className={`rounded-md border px-2 py-0.5 font-mono text-xs font-bold ${color}`}>{method}</span>
@@ -410,7 +410,7 @@ export default function DocsPage() {
       {/* Hero */}
       <section className="relative overflow-hidden border-b px-5 sm:px-8 py-12 sm:py-16">
         <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute left-1/2 top-[-12rem] h-[28rem] w-[48rem] -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
+          <div className="absolute left-1/2 top-[-12rem] h-[28rem] w-[48rem] -translate-x-1/2 rounded-full bg-primary/10 dark:bg-primary/20 blur-3xl" />
         </div>
         <div className="mx-auto max-w-7xl">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Documentation</p>
@@ -420,7 +420,7 @@ export default function DocsPage() {
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-2 font-mono text-xs sm:text-sm">
             <span className="rounded-md border bg-card px-2.5 py-1 text-muted-foreground">Base URL</span>
-            <code className="rounded-md border bg-zinc-950 px-2.5 py-1 text-zinc-100 break-all">{BASE}/v1</code>
+            <code className="rounded-md border bg-code px-2.5 py-1 text-code-foreground break-all">{BASE}/v1</code>
           </div>
         </div>
       </section>
@@ -784,7 +784,7 @@ export default function DocsPage() {
                 <h2 className="text-2xl font-bold tracking-tight">Ready to make a request?</h2>
                 <p className="mx-auto mt-3 max-w-xl text-muted-foreground">Sign in, add your first provider key, create your dvai_ key, and call the endpoint.</p>
                 <div className="mt-6 flex flex-col sm:flex-row justify-center gap-3">
-                  <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
+                  <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-hover">
                     Open dashboard <ArrowRight className="h-4 w-4" />
                   </Link>
                   <a href={GITHUB} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-lg border bg-card px-5 py-3 text-sm font-semibold hover:bg-muted">

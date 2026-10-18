@@ -147,7 +147,7 @@ export default function ProjectsPage() {
         </div>
         <button
           onClick={() => setShowCreateProject(true)}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 inline-flex items-center gap-2 rounded-lg text-sm font-medium shadow"
+          className="bg-primary text-primary-foreground hover:bg-primary-hover h-10 px-4 py-2 inline-flex items-center gap-2 rounded-lg text-sm font-medium shadow"
         >
           <Plus className="h-4 w-4" /> Create Project
         </button>
@@ -156,7 +156,7 @@ export default function ProjectsPage() {
       {/* Generated Key Alert Modal */}
       {generatedKey && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 space-y-3">
-          <div className="flex items-center gap-2 text-amber-500 font-semibold">
+          <div className="flex items-center gap-2 text-warn font-semibold">
             <AlertTriangle className="h-5 w-5" />
             <span>Copy your new API Key</span>
           </div>
@@ -174,7 +174,7 @@ export default function ProjectsPage() {
               onClick={() => copyKeyToClipboard(generatedKey)}
               className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shadow"
             >
-              {copiedKey ? <Check className="h-3.5 w-3.5 text-green-300" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedKey ? <Check className="h-3.5 w-3.5 text-ok" /> : <Copy className="h-3.5 w-3.5" />}
               {copiedKey ? 'Copied' : 'Copy Key'}
             </button>
             <button
@@ -245,7 +245,7 @@ export default function ProjectsPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowCreateKey(true)}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-3 py-1.5 inline-flex items-center gap-1.5 rounded-md text-xs font-medium"
+                className="bg-primary text-primary-foreground hover:bg-primary-hover h-9 px-3 py-1.5 inline-flex items-center gap-1.5 rounded-md text-xs font-medium"
               >
                 <Plus className="h-3.5 w-3.5" /> Generate Key
               </button>
@@ -282,7 +282,7 @@ export default function ProjectsPage() {
                       <td className="py-3 font-medium">{k.name}</td>
                       <td className="py-3 font-mono text-xs">{k.keyPrefix}••••••••</td>
                       <td className="py-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${k.status === 'active' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${k.status === 'active' ? 'bg-green-500/10 text-ok' : 'bg-red-500/10 text-bad'}`}>
                           {k.status}
                         </span>
                       </td>
@@ -344,7 +344,7 @@ export default function ProjectsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary-hover"
                 >
                   Create Project
                 </button>
@@ -384,7 +384,7 @@ export default function ProjectsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary-hover"
                 >
                   Generate Key
                 </button>

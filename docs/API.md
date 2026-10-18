@@ -205,6 +205,10 @@ Team plan users can create kits: temporary `dvai_` team keys with a request cap 
 | `GET /user/kits` | Clerk session | Kits with `status` and `usage` (`requests`, `tokens`, `requestsRemaining`, `tokensRemaining`) |
 | `POST /user/kits` | Clerk session (Team) | `{ name, expiresAt, requestCap?, tokenCap?, maxTeamSize?, keyCount?, allowedModels? }`; returns the keys once |
 | `POST /user/kits/:id/revoke` | Clerk session | Revoke the kit |
+| `POST /user/coupons/validate` | Clerk session | `{ code, plan, period }` → `{ code, kind, duration, basePaise, discountPaise, finalPaise }` (nothing held) |
+| `POST /user/coupons/reserve` | Clerk session | Same body; atomically holds one use for 60 min, adds `redemptionId` |
+| `POST /user/coupons/redemptions/:id/release` | Clerk session | Give the held use back (checkout abandoned) |
+| `POST /user/coupons/redemptions/:id/confirm` | Clerk session | `{ subscriptionId }`; marks the use as paid (idempotent) |
 | `GET /public/kits/:shareToken` | none | Name, status, expiry, caps, usage (no keys). Shown at `/kit/<shareToken>` |
 
 ## Errors
@@ -250,6 +254,10 @@ Admin only (regular users never need it). `/admin/*` accepts **either** the gate
 | Endpoint | Description |
 |---|---|
 | `GET /admin/me` | `{ method: "admin_key" }` or `{ method: "clerk", userId, email }` |
+| `GET /admin/coupons` | Promo codes with `confirmedCount` and `reservedCount` |
+| `POST /admin/coupons` | `{ code, kind: "percent"\|"flat", percentOff? (1-90), amountOffInr?, plans?, periods?, duration: "first_cycle"\|"forever", expiresAt?, maxRedemptions?, oncePerUser?, razorpayOfferId?, note? }` |
+| `PATCH /admin/coupons/:id` | `{ status?: "active"\|"disabled", expiresAt?, maxRedemptions? }` |
+| `POST /admin/coupons/redemptions/:id/confirm` | `{ subscriptionId }`; used by the dashboard webhook with `GATEWAY_ADMIN_API_KEY` |
 | `GET/POST /admin/providers` | List / add (`type`, `name`, `baseUrl`, `config`) |
 | `PATCH/DELETE /admin/providers/:id` | Update (`name`, `baseUrl`, `status`, `config` merged: `keyStrategy`, `keyOrder`, `priority`) / delete |
 | `POST /admin/providers/:id/test` | Test connection |

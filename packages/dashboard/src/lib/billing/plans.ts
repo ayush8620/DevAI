@@ -1,12 +1,15 @@
 /**
  * DevAI plans: the ONE place prices and plan features are defined.
- * The server reads amounts from here when it creates a Razorpay order; the client
- * never sends an amount. Prices are in Indian rupees, billed monthly.
+ * Paid plans are Razorpay Subscriptions that renew automatically (monthly, or yearly with
+ * two months free). The Razorpay plan ids come from env vars (see razorpayPlanEnvVar);
+ * the browser never sends an amount. Prices are in Indian rupees.
  */
 
 export type PlanId = 'free' | 'student' | 'pro' | 'team';
 export const PAID_PLAN_IDS = ['student', 'pro', 'team'] as const;
 export type PaidPlanId = typeof PAID_PLAN_IDS[number];
+export type BillingPeriod = 'monthly' | 'yearly';
+export const BILLING_PERIODS: readonly BillingPeriod[] = ['monthly', 'yearly'];
 
 export interface PlanLimits {
   /** Chat completion requests per day through the gateway */
@@ -26,6 +29,8 @@ export interface Plan {
   name: string;
   /** Monthly price in rupees (0 for Free) */
   priceInr: number;
+  /** Yearly price in rupees: 10 x monthly, i.e. two months free (0 for Free) */
+  priceInrYearly: number;
   tagline: string;
   limits: PlanLimits;
   features: string[];
@@ -36,14 +41,17 @@ export interface Plan {
 }
 
 export const CURRENCY = 'INR';
-/** Days of access one payment buys. */
-export const BILLING_PERIOD_DAYS = 30;
+/** Yearly billing = 10 monthly payments (2 months free, about 17% off). */
+export const YEARLY_MONTHS_CHARGED = 10;
+/** Billing cycles a subscription is created for (Razorpay needs a total_count): 10 years. */
+export const TOTAL_CYCLES: Record<BillingPeriod, number> = { monthly: 120, yearly: 10 };
 
 export const PLANS: readonly Plan[] = [
   {
     id: 'free',
     name: 'Free',
     priceInr: 0,
+    priceInrYearly: 0,
     tagline: 'For trying DevAI and side projects.',
     limits: { requestsPerDay: 100, projects: 1, providerKeys: 2, pooledKeys: 2, kits: false },
     features: [
@@ -60,6 +68,7 @@ export const PLANS: readonly Plan[] = [
     id: 'student',
     name: 'Student',
     priceInr: 99,
+    priceInrYearly: 990,
     tagline: 'For students learning to build with AI.',
     limits: { requestsPerDay: 2_000, projects: 3, providerKeys: 5, pooledKeys: 10, kits: false },
     features: [
@@ -76,6 +85,7 @@ export const PLANS: readonly Plan[] = [
     id: 'pro',
     name: 'Pro',
     priceInr: 499,
+    priceInrYearly: 4_990,
     tagline: 'For individual developers shipping apps.',
     limits: { requestsPerDay: 20_000, projects: 10, providerKeys: 20, pooledKeys: null, kits: false },
     features: [
@@ -92,6 +102,7 @@ export const PLANS: readonly Plan[] = [
     id: 'team',
     name: 'Team',
     priceInr: 1_999,
+    priceInrYearly: 19_990,
     tagline: 'For teams sharing providers, keys and analytics.',
     limits: { requestsPerDay: 100_000, projects: 50, providerKeys: 100, pooledKeys: null, kits: true },
     features: [
@@ -112,11 +123,51 @@ export function isPaidPlan(id: unknown): id is PaidPlanId {
   return typeof id === 'string' && (PAID_PLAN_IDS as readonly string[]).includes(id);
 }
 
-/** Amount for a Razorpay order, in paise (₹1 = 100 paise). Throws for unknown or free plans. */
-export function planAmountPaise(id: unknown): number {
+export function isBillingPeriod(p: unknown): p is BillingPeriod {
+  return p === 'monthly' || p === 'yearly';
+}
+
+/** Price per billing cycle in rupees. */
+export function planPriceInr(plan: Plan, period: BillingPeriod = 'monthly'): number {
+  return period === 'yearly' ? plan.priceInrYearly : plan.priceInr;
+}
+
+/** Amount charged per cycle, in paise (₹1 = 100 paise). Throws for unknown or free plans. */
+export function planAmountPaise(id: unknown, period: BillingPeriod = 'monthly'): number {
   const plan = getPlan(id);
   if (!plan || !isPaidPlan(plan.id)) throw new Error(`Not a paid plan: ${String(id)}`);
-  return Math.round(plan.priceInr * 100);
+  if (!isBillingPeriod(period)) throw new Error(`Unknown billing period: ${String(period)}`);
+  return Math.round(planPriceInr(plan, period) * 100);
+}
+
+/** What a yearly plan costs per month, rounded to the rupee ("₹83/mo"). */
+export function yearlyMonthlyEquivalent(plan: Plan): number {
+  return Math.round(plan.priceInrYearly / 12);
+}
+
+/** Percent saved by paying yearly vs 12 monthly payments (17 for "2 months free"). */
+export function yearlySavingsPercent(plan: Plan): number {
+  if (!plan.priceInr) return 0;
+  return Math.round((1 - plan.priceInrYearly / (plan.priceInr * 12)) * 100);
+}
+
+/** Env var holding the Razorpay plan id: RAZORPAY_PLAN_ID_PRO, RAZORPAY_PLAN_ID_PRO_YEARLY, ... */
+export function razorpayPlanEnvVar(id: PaidPlanId, period: BillingPeriod): string {
+  return `RAZORPAY_PLAN_ID_${id.toUpperCase()}${period === 'yearly' ? '_YEARLY' : ''}`;
+}
+
+/** The Razorpay plan id for a plan + period, or '' when that env var is not set. */
+export function razorpayPlanId(id: PaidPlanId, period: BillingPeriod, env: Record<string, string | undefined> = process.env): string {
+  return env[razorpayPlanEnvVar(id, period)]?.trim() || '';
+}
+
+/** "student_monthly" -> is a Razorpay plan id configured for it? Passed from the server to the UI. */
+export type ConfiguredPlans = Partial<Record<`${PaidPlanId}_${BillingPeriod}`, boolean>>;
+
+export function configuredPlans(env: Record<string, string | undefined> = process.env): ConfiguredPlans {
+  const out: ConfiguredPlans = {};
+  for (const id of PAID_PLAN_IDS) for (const period of BILLING_PERIODS) out[`${id}_${period}`] = Boolean(razorpayPlanId(id, period, env));
+  return out;
 }
 
 /** "₹1,999" */
@@ -143,31 +194,63 @@ export function isStudentEmail(email: string | null | undefined): boolean {
   return labels.length >= 3 && (sld === 'edu' || sld === 'ac') && /^[a-z]{2}$/.test(tld);
 }
 
-/** What is stored on the user (Clerk publicMetadata.billing). */
+/** Razorpay subscription states (https://razorpay.com/docs/payments/subscriptions/states/). */
+export type SubscriptionStatus =
+  | 'created' | 'authenticated' | 'active' | 'pending' | 'halted' | 'cancelled' | 'completed' | 'expired' | 'paused';
+
+/**
+ * What is stored on the user (Clerk publicMetadata.billing). The gateway reads plan, status
+ * and expiresAt (packages/gateway/src/billing/plans.ts), so keep those three names.
+ */
 export interface BillingRecord {
   plan: PaidPlanId;
-  status: 'active';
-  /** ISO timestamps */
-  activatedAt: string;
+  period: BillingPeriod;
+  status: SubscriptionStatus;
+  /** End of the paid period (ISO). Access lasts until then, also after cancel or halt. */
   expiresAt: string;
-  orderId: string;
-  paymentId: string;
-  amountPaise: number;
-  currency: string;
+  /** Start of the current period (ISO), when known */
+  currentStart?: string | null;
+  subscriptionId: string;
+  /** Cancel was requested; the plan ends at expiresAt and does not renew */
+  cancelAtPeriodEnd?: boolean;
+  lastPaymentId?: string | null;
+  /** Last failed payment (payment.failed), cleared on the next successful charge */
+  lastPaymentError?: string | null;
+  /** Plan change scheduled for the end of the current period (a second subscription) */
+  scheduled?: { subscriptionId: string; plan: PaidPlanId; period: BillingPeriod; startsAt: string | null } | null;
+  /** Coupon applied to this subscription */
+  coupon?: { code: string; duration: 'first_cycle' | 'forever' } | null;
+  /** Idempotency / ordering of webhook events */
+  lastEventId?: string | null;
+  lastEventAt?: number | null;
+  updatedAt: string;
 }
+
+/**
+ * Statuses that keep the paid plan until expiresAt. pending/halted = renewal payment
+ * failing (Razorpay retries); cancelled/completed = no renewal. After expiresAt all of
+ * them fall back to Free. 'authenticated' = mandate set up, first cycle paid upfront
+ * (coupon) or starting later (plan change). Records from the old one-time orders used
+ * status 'active' too, so they keep working until they expire.
+ */
+export const ACCESS_STATUSES: readonly string[] = ['active', 'authenticated', 'pending', 'halted', 'cancelled', 'completed'];
 
 /** Current plan from stored billing metadata: an expired or missing record means Free. */
 export function currentPlanId(billing: unknown, now: Date = new Date()): PlanId {
   const b = billing as Partial<BillingRecord> | null | undefined;
-  if (!b || !isPaidPlan(b.plan) || b.status !== 'active' || !b.expiresAt) return 'free';
+  if (!b || !isPaidPlan(b.plan) || typeof b.status !== 'string' || !ACCESS_STATUSES.includes(b.status) || !b.expiresAt) return 'free';
   const exp = new Date(b.expiresAt);
   return Number.isFinite(exp.getTime()) && exp > now ? b.plan : 'free';
 }
 
-/** New expiry: extends from the current expiry when renewing early, else from now. */
-export function nextExpiry(existing: unknown, now: Date = new Date()): Date {
-  const b = existing as Partial<BillingRecord> | null | undefined;
-  const cur = b?.expiresAt ? new Date(b.expiresAt) : null;
-  const base = cur && Number.isFinite(cur.getTime()) && cur > now ? cur : now;
-  return new Date(base.getTime() + BILLING_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+/** Will the plan renew automatically? */
+export function renews(billing: Partial<BillingRecord> | null | undefined): boolean {
+  return Boolean(billing && (billing.status === 'active' || billing.status === 'authenticated' || billing.status === 'pending') && !billing.cancelAtPeriodEnd);
+}
+
+/** Monthly-equivalent price, to decide whether a change is an upgrade (now) or a downgrade (at period end). */
+export function monthlyValue(id: PlanId, period: BillingPeriod = 'monthly'): number {
+  const plan = getPlan(id);
+  if (!plan) return 0;
+  return period === 'yearly' ? plan.priceInrYearly / 12 : plan.priceInr;
 }

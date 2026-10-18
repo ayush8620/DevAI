@@ -22,8 +22,8 @@ export function CodeTabs({ tabs }: { tabs: CodeTab[] }) {
   };
 
   return (
-    <div className="rounded-xl border bg-zinc-950 text-zinc-100 shadow-2xl overflow-hidden">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-2">
+    <div className="rounded-xl border bg-code text-code-foreground shadow-2xl overflow-hidden">
+      <div className="flex items-center justify-between border-b border-code-border px-2">
         <div className="flex overflow-x-auto" role="tablist" aria-label="Code examples">
           {tabs.map(t => (
             <button
@@ -31,14 +31,14 @@ export function CodeTabs({ tabs }: { tabs: CodeTab[] }) {
               role="tab"
               aria-selected={t.id === tab.id}
               onClick={() => setActive(t.id)}
-              className={`px-3 sm:px-4 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${t.id === tab.id ? 'border-blue-400 text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200'}`}
+              className={`px-3 sm:px-4 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${t.id === tab.id ? 'border-primary text-code-foreground' : 'border-transparent text-code-muted hover:text-code-foreground'}`}
             >
               {t.label}
             </button>
           ))}
         </div>
-        <button onClick={copy} className="m-2 p-1.5 rounded bg-zinc-800 text-zinc-400 hover:text-white shrink-0" aria-label="Copy code">
-          {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+        <button onClick={copy} className="m-2 p-1.5 rounded bg-code-hover text-code-muted hover:text-code-foreground shrink-0" aria-label="Copy code">
+          {copied ? <Check className="h-3.5 w-3.5 text-ok" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
       </div>
       <pre className="p-4 sm:p-5 text-[12px] sm:text-[13px] leading-relaxed overflow-x-auto font-mono"><code>{tab.code}</code></pre>

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Server, FolderKanban, BarChart3, Settings, BookOpen, Sun, Moon, Menu, X, ExternalLink, Home, CreditCard, Layers, Trophy,
+  LayoutDashboard, Server, FolderKanban, BarChart3, Settings, BookOpen, Sun, Moon, Menu, X, ExternalLink, Home, CreditCard, Layers, Trophy, Ticket,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { UserButton } from '@clerk/nextjs';
@@ -21,6 +21,8 @@ export const DASHBOARD_ROUTES = [
   { href: '/dashboard/usage', label: 'Usage', icon: BarChart3 },
   { href: '/dashboard/kits', label: 'Hackathon kits', icon: Trophy },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
+  // Admin-only: promo codes for paid plans.
+  { href: '/dashboard/coupons', label: 'Promo codes', icon: Ticket },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
   { href: '/dashboard/api-docs', label: 'Quick reference', icon: BookOpen },
 ];
@@ -33,7 +35,7 @@ const RESOURCES = [
 function Logo() {
   return (
     <Link href="/" aria-label="DevAI home" className="flex items-center gap-2">
-      <BrandLogo markClassName="drop-shadow-[0_4px_12px_rgba(59,130,246,0.35)]" />
+      <BrandLogo markClassName="drop-shadow-[0_4px_12px_rgba(249,115,22,0.30)]" />
       <span className="rounded-full border bg-card/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Console</span>
     </Link>
   );
@@ -92,7 +94,7 @@ function Footer({ mounted, isDark, toggle }: { mounted: boolean; isDark: boolean
           aria-label="Toggle theme"
           onClick={toggle}
         >
-          {!mounted ? <span className="block h-4 w-4" /> : isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          {!mounted ? <span className="block h-4 w-4" /> : isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
       </div>
     </div>

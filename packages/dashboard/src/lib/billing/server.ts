@@ -1,5 +1,8 @@
 import { clerkClient } from '@clerk/nextjs/server';
-import { BillingRecord, CURRENCY, getPlan, isPaidPlan, nextExpiry, planAmountPaise, type PaidPlanId } from './plans';
+import type { BillingRecord } from './plans';
+import { applyBillingEvent, followUps, type BillingEvent, type Transition } from './subscription';
+import { cancelSubscription } from './razorpay';
+import { confirmRedemption } from './coupons-client';
 
 /** Verified email addresses of a Clerk user (for the Student plan check). */
 export async function verifiedEmails(userId: string): Promise<string[]> {
@@ -9,35 +12,36 @@ export async function verifiedEmails(userId: string): Promise<string[]> {
     .map(e => e.emailAddress.toLowerCase());
 }
 
-/**
- * Record a successful payment on the user (Clerk publicMetadata.billing).
- * Idempotent: the browser callback and the webhook may both report the same payment.
- */
-export async function activatePlan(p: {
-  userId: string; planId: string; orderId: string; paymentId: string; amountPaise: number; currency?: string;
-}): Promise<{ ok: true; billing: BillingRecord } | { ok: false; reason: string }> {
-  if (!isPaidPlan(p.planId) || !getPlan(p.planId)) return { ok: false, reason: 'unknown plan' };
-  if (p.amountPaise !== planAmountPaise(p.planId)) return { ok: false, reason: 'amount does not match the plan price' };
-  if ((p.currency ?? CURRENCY) !== CURRENCY) return { ok: false, reason: 'unexpected currency' };
+export async function readBilling(userId: string): Promise<Partial<BillingRecord> | null> {
+  const user = await (await clerkClient()).users.getUser(userId);
+  return ((user.publicMetadata as any)?.billing as Partial<BillingRecord> | undefined) ?? null;
+}
 
-  const client = await clerkClient();
-  const user = await client.users.getUser(p.userId);
-  const existing = (user.publicMetadata as any)?.billing as Partial<BillingRecord> | undefined;
-  if (existing?.paymentId === p.paymentId && existing.plan === p.planId) {
-    return { ok: true, billing: existing as BillingRecord };
+export async function writeBilling(userId: string, billing: BillingRecord): Promise<void> {
+  // updateUserMetadata merges top-level keys, so other publicMetadata keys are kept.
+  await (await clerkClient()).users.updateUserMetadata(userId, { publicMetadata: { billing } });
+}
+
+/**
+ * Apply a subscription event to the user's stored plan, then run the follow-ups:
+ * cancel the subscription this one replaces (plan change) and confirm a coupon redemption.
+ * Follow-up failures are logged, not thrown: the plan write is what matters, and
+ * Razorpay retries webhooks that fail.
+ */
+export async function applyAndPersist(userId: string, ev: BillingEvent, opts: { sessionToken?: string | null } = {}): Promise<Transition> {
+  const existing = await readBilling(userId);
+  const t = applyBillingEvent(existing, ev);
+  if (t.action === 'write') await writeBilling(userId, t.billing);
+  if (t.action === 'write' || ev.name === 'verify') {
+    const f = followUps(ev);
+    if (f.cancel && existing?.subscriptionId === f.cancel.subscriptionId) {
+      try { await cancelSubscription(f.cancel.subscriptionId, f.cancel.atCycleEnd); }
+      catch (err: any) { console.warn('Cancelling the replaced subscription failed (it may already be cancelled):', err?.message); }
+    }
+    if (f.confirmRedemption) {
+      try { await confirmRedemption(f.confirmRedemption.redemptionId, f.confirmRedemption.subscriptionId, opts.sessionToken ?? null); }
+      catch (err: any) { console.warn('Coupon redemption confirm failed:', err?.message); }
+    }
   }
-  const now = new Date();
-  // Renewing the same plan early extends it; switching plans starts a fresh period.
-  const billing: BillingRecord = {
-    plan: p.planId as PaidPlanId,
-    status: 'active',
-    activatedAt: now.toISOString(),
-    expiresAt: nextExpiry(existing?.plan === p.planId ? existing : undefined, now).toISOString(),
-    orderId: p.orderId,
-    paymentId: p.paymentId,
-    amountPaise: p.amountPaise,
-    currency: CURRENCY,
-  };
-  await client.users.updateUserMetadata(p.userId, { publicMetadata: { billing } });
-  return { ok: true, billing };
+  return t;
 }

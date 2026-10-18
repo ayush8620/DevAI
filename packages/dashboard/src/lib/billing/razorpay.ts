@@ -1,10 +1,14 @@
 /**
- * Razorpay server helpers. Keys come only from the environment:
+ * Razorpay server helpers (Plans + Subscriptions API). Keys come only from the environment:
  *   RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET   - API keys (Dashboard → Account & Settings → API keys)
  *   NEXT_PUBLIC_RAZORPAY_KEY_ID            - same key id, exposed to Checkout.js in the browser
  *   RAZORPAY_WEBHOOK_SECRET                - secret set on the webhook in the Razorpay dashboard
+ *   RAZORPAY_PLAN_ID_STUDENT / _PRO / _TEAM (+ _YEARLY variants) - plan ids, see
+ *                                            scripts/razorpay-create-plans.mjs
  * With the API keys missing, payments are reported as disabled and nothing calls Razorpay.
  */
+import { CURRENCY, configuredPlans, type BillingPeriod, type ConfiguredPlans, type PaidPlanId } from './plans';
+import type { RazorpaySubscriptionEntity } from './subscription';
 
 const API = 'https://api.razorpay.com/v1';
 
@@ -21,18 +25,15 @@ export function paymentsEnabled(): boolean {
   return Boolean(keyId && keySecret && clerk);
 }
 
+/** Which plan + period combinations can be bought right now (keys AND a plan id set). */
+export function purchasablePlans(): ConfiguredPlans {
+  if (!paymentsEnabled()) return {};
+  return configuredPlans();
+}
+
 /** Key id for Checkout.js (public by design). */
 export function publicKeyId(): string {
   return process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID?.trim() || process.env.RAZORPAY_KEY_ID?.trim() || '';
-}
-
-export interface RazorpayOrder {
-  id: string;
-  amount: number;
-  currency: string;
-  receipt?: string;
-  status: string;
-  notes?: Record<string, string>;
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -55,10 +56,56 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function createOrder(o: { amount: number; currency: string; receipt: string; notes: Record<string, string> }) {
-  return call<RazorpayOrder>('/orders', { method: 'POST', body: JSON.stringify(o) });
+export interface CreateSubscriptionInput {
+  plan_id: string;
+  total_count: number;
+  customer_notify?: 0 | 1;
+  quantity?: number;
+  /** Unix seconds; omitted = starts right after the authorisation payment */
+  start_at?: number;
+  offer_id?: string;
+  /** Upfront amount charged with the authorisation payment */
+  addons?: { item: { name: string; amount: number; currency: string } }[];
+  notes: Record<string, string>;
 }
 
-export function fetchOrder(orderId: string) {
-  return call<RazorpayOrder>(`/orders/${encodeURIComponent(orderId)}`);
+export function createSubscription(input: CreateSubscriptionInput) {
+  return call<RazorpaySubscriptionEntity & { short_url?: string }>('/subscriptions', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function fetchSubscription(id: string) {
+  return call<RazorpaySubscriptionEntity>(`/subscriptions/${encodeURIComponent(id)}`);
+}
+
+/** Cancel now, or at the end of the current billing cycle (no further charges either way). */
+export function cancelSubscription(id: string, atCycleEnd: boolean) {
+  return call<RazorpaySubscriptionEntity>(`/subscriptions/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST', body: JSON.stringify({ cancel_at_cycle_end: atCycleEnd ? 1 : 0 }),
+  });
+}
+
+export function fetchInvoice(id: string) {
+  return call<{ id: string; subscription_id?: string | null }>(`/invoices/${encodeURIComponent(id)}`);
+}
+
+/**
+ * A Razorpay plan with a discounted amount, for "forever" coupons (Razorpay has no API to
+ * create offers). Cached per process so repeat redemptions of the same code reuse it.
+ */
+const discountedPlanCache = new Map<string, string>();
+export async function discountedPlanId(p: { planId: PaidPlanId; period: BillingPeriod; amountPaise: number; code: string }): Promise<string> {
+  const key = `${p.planId}:${p.period}:${p.amountPaise}`;
+  const hit = discountedPlanCache.get(key);
+  if (hit) return hit;
+  const plan = await call<{ id: string }>('/plans', {
+    method: 'POST',
+    body: JSON.stringify({
+      period: p.period === 'yearly' ? 'yearly' : 'monthly',
+      interval: 1,
+      item: { name: `DevAI ${p.planId} (${p.period}, code ${p.code})`, amount: p.amountPaise, currency: CURRENCY },
+      notes: { devai: 'discounted', planId: p.planId, period: p.period, coupon: p.code },
+    }),
+  });
+  discountedPlanCache.set(key, plan.id);
+  return plan.id;
 }
