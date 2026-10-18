@@ -2,8 +2,9 @@ import { Context, Next } from 'hono';
 import { eq, and } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { hashApiKey } from '../crypto/encryption.js';
-import { config } from '../config.js';
+import '../config.js'; // loads .env before the admin auth settings are read
 import { logger } from './logger.js';
+import { authenticateAdmin } from '../auth/admin.js';
 
 export async function authMiddleware(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
@@ -11,13 +12,17 @@ export async function authMiddleware(c: Context, next: Next) {
     return c.json({ error: { type: 'authentication_error', message: 'Missing or invalid Authorization header' } }, 401);
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.slice(7).trim();
   const path = c.req.path;
   
   if (path.startsWith('/admin')) {
-    if (token !== config.ADMIN_API_KEY) {
-      return c.json({ error: { type: 'authentication_error', message: 'Invalid Admin API key' } }, 401);
+    // ADMIN_API_KEY, or a Clerk session token of an allowlisted user.
+    const result = await authenticateAdmin(token);
+    if (!result.ok) {
+      const type = result.status === 403 ? 'permission_error' : 'authentication_error';
+      return c.json({ error: { type, message: result.message } }, result.status);
     }
+    c.set('adminAuth', result);
     return await next();
   } else if (path.startsWith('/v1')) {
     const keyHash = hashApiKey(token);

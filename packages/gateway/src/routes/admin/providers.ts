@@ -3,6 +3,7 @@ import { db } from '../../db/index.js';
 import { providers, providerCredentials, models } from '../../db/schema/index.js';
 import { eq, and, sql, count } from 'drizzle-orm';
 import { logAudit } from '../../services/audit.js';
+import { adminActor } from '../../auth/admin.js';
 import { checkProviderHealth } from '../../services/health.js';
 import { createProvider } from '../../providers/registry.js';
 import { decrypt } from '../../crypto/encryption.js';
@@ -73,7 +74,7 @@ adminProviderRoutes.post('/', async (c) => {
     }).returning();
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'provider.created',
       resourceType: 'provider',
       resourceId: provider.id,
@@ -127,7 +128,7 @@ adminProviderRoutes.patch('/:id', async (c) => {
     }
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'provider.updated',
       resourceType: 'provider',
       resourceId: id,
@@ -161,7 +162,7 @@ adminProviderRoutes.delete('/:id', async (c) => {
       .where(eq(providerCredentials.providerId, id));
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'provider.deleted',
       resourceType: 'provider',
       resourceId: id,
@@ -230,7 +231,7 @@ adminProviderRoutes.post('/:id/models', async (c) => {
     }).returning();
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'model.added',
       resourceType: 'model',
       resourceId: inserted.id,
@@ -254,7 +255,7 @@ adminProviderRoutes.delete('/:id/models/:modelId', async (c) => {
       .where(and(eq(models.providerId, providerId), eq(models.modelId, modelId)));
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'model.deleted',
       resourceType: 'model',
       details: { providerId, modelId },

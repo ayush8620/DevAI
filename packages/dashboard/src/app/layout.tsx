@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { ClerkProvider } from '@clerk/nextjs';
 import { ThemeProvider } from '@/components/layout/theme-provider';
+import { clerkAppearance, clerkEnabled, SIGN_IN_URL, SIGN_UP_URL } from '@/lib/clerk';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -15,7 +17,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
+  const page = (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
@@ -23,5 +25,20 @@ export default function RootLayout({
         </ThemeProvider>
       </body>
     </html>
+  );
+
+  // Clerk is optional (see lib/clerk.ts): without a publishable key the app renders as before.
+  if (!clerkEnabled) return page;
+  return (
+    <ClerkProvider
+      appearance={clerkAppearance}
+      signInUrl={SIGN_IN_URL}
+      signUpUrl={SIGN_UP_URL}
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/dashboard"
+      afterSignOutUrl="/"
+    >
+      {page}
+    </ClerkProvider>
   );
 }

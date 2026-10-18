@@ -9,6 +9,7 @@ import { adminProjectRoutes } from './routes/admin/projects.js';
 import { adminApiKeyRoutes } from './routes/admin/apiKeys.js';
 import { adminAnalyticsRoutes } from './routes/admin/analytics.js';
 import { adminAuditRoutes } from './routes/admin/audit.js';
+import { adminMeRoutes } from './routes/admin/me.js';
 import { authMiddleware } from './middleware/auth.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { loggerMiddleware, logger } from './middleware/logger.js';
@@ -33,7 +34,7 @@ app.route('/v1/chat', chatRoutes);
 app.route('/v1/models', modelsRoutes);
 app.route('/v1/usage', usageRoutes);
 
-// Admin routes (admin API key)
+// Admin routes (ADMIN_API_KEY or an allowlisted Clerk session)
 app.use('/admin/*', authMiddleware);
 app.route('/admin/providers', adminProviderRoutes);
 app.route('/admin/credentials', adminCredentialRoutes);
@@ -41,6 +42,7 @@ app.route('/admin/projects', adminProjectRoutes);
 app.route('/admin/api-keys', adminApiKeyRoutes);
 app.route('/admin/analytics', adminAnalyticsRoutes);
 app.route('/admin/audit-logs', adminAuditRoutes);
+app.route('/admin/me', adminMeRoutes);
 
 // Global error handler
 app.onError((err, c) => {

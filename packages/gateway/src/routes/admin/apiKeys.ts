@@ -4,6 +4,7 @@ import { apiKeys, projects } from '../../db/schema/index.js';
 import { eq } from 'drizzle-orm';
 import { generateApiKey, maskApiKey } from '../../crypto/encryption.js';
 import { logAudit } from '../../services/audit.js';
+import { adminActor } from '../../auth/admin.js';
 import { logger } from '../../middleware/logger.js';
 
 export const adminApiKeyRoutes = new Hono();
@@ -61,7 +62,7 @@ adminApiKeyRoutes.post('/project/:projectId', async (c) => {
     }).returning();
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'api_key.created',
       resourceType: 'api_key',
       resourceId: apiKey.id,
@@ -102,7 +103,7 @@ adminApiKeyRoutes.delete('/:id', async (c) => {
     }
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'api_key.revoked',
       resourceType: 'api_key',
       resourceId: id,

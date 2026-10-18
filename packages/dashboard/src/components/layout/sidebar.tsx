@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, Server, FolderKanban, BarChart3, Settings, BookOpen, Sun, Moon } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { UserButton } from '@clerk/nextjs';
 import { cn } from '@/lib/utils';
+import { clerkEnabled } from '@/lib/clerk';
 
 export const DASHBOARD_ROUTES = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -46,6 +48,12 @@ export function Sidebar() {
           })}
         </nav>
       </div>
+      {clerkEnabled && (
+        <div className="px-4 py-3 border-t flex items-center gap-3 min-h-[56px]">
+          {/* Account menu: profile, connected Google/GitHub accounts, sign out. */}
+          <UserButton showName appearance={{ elements: { userButtonBox: 'flex-row-reverse', userButtonOuterIdentifier: 'text-sm font-medium text-foreground truncate max-w-[150px]' } }} />
+        </div>
+      )}
       <div className="p-4 border-t flex items-center justify-between">
         <span className="text-sm font-medium">Theme</span>
         <button

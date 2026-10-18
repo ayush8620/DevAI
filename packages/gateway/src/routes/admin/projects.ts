@@ -3,6 +3,7 @@ import { db } from '../../db/index.js';
 import { projects, apiKeys, usageRecords } from '../../db/schema/index.js';
 import { eq, count } from 'drizzle-orm';
 import { logAudit } from '../../services/audit.js';
+import { adminActor } from '../../auth/admin.js';
 import { logger } from '../../middleware/logger.js';
 import { RoutingConfigSchema } from '../../types/index.js';
 
@@ -58,7 +59,7 @@ adminProjectRoutes.post('/', async (c) => {
     }).returning();
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'project.created',
       resourceType: 'project',
       resourceId: project.id,
@@ -100,7 +101,7 @@ adminProjectRoutes.patch('/:id', async (c) => {
     }
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'project.updated',
       resourceType: 'project',
       resourceId: id,
@@ -134,7 +135,7 @@ adminProjectRoutes.delete('/:id', async (c) => {
       .where(eq(apiKeys.projectId, id));
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'project.deleted',
       resourceType: 'project',
       resourceId: id,

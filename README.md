@@ -58,7 +58,7 @@ npm run dev
 ```
 
 The gateway runs on `http://localhost:3001`. The dashboard runs on `http://localhost:3000`: the landing page is at `/` and the admin dashboard at `/dashboard`. The old paths (`/providers`, `/projects`, `/usage`, `/settings`, `/api-docs`) redirect to `/dashboard/...`.
-Open **Settings** (`/dashboard/settings`) and paste your `ADMIN_API_KEY` (it is stored only in your browser).
+Open **Settings** (`/dashboard/settings`) and paste your `ADMIN_API_KEY` (it is stored only in your browser). Or set up [Clerk sign-in](#clerk-sign-in-dashboard-login) so you sign in with email, Google or GitHub instead.
 
 ### Optional: Local PostgreSQL & Redis (Docker)
 
@@ -286,6 +286,61 @@ Browsers may call the gateway only from the origins listed in `ALLOWED_ORIGINS` 
 - When `NODE_ENV` is not `production`, `http://localhost:*` and `127.0.0.1` are also allowed.
 - Server-to-server requests (no `Origin` header) are not affected.
 
+## Clerk sign-in (dashboard login)
+
+Clerk sign-in is optional. When it is configured:
+
+- `/dashboard` requires sign-in. `/`, `/sign-in` and `/sign-up` stay public.
+- Users can sign in with email, Google or GitHub, or whatever else is enabled in Clerk. The code does not restrict sign-in methods.
+- The dashboard sends the user's Clerk session token to the gateway instead of the admin key.
+
+The gateway accepts **either** `ADMIN_API_KEY` **or** a valid Clerk session token on `/admin/*`. DevAI is single-tenant, so a Clerk account alone is not enough: the user must be on `ADMIN_EMAILS` or `ADMIN_USER_IDS`.
+
+| Request | Result |
+|---|---|
+| `Bearer <ADMIN_API_KEY>` | 200 |
+| Valid Clerk session of an allowlisted email / user id | 200 |
+| Valid Clerk session of any other user | 403 `permission_error` |
+| Valid Clerk session, but no allowlist configured | 403, plus a warning in the gateway log. Only the admin key works. |
+| Bad, expired or tampered token, or wrong origin (`azp`) | 401 |
+
+How the gateway checks a token:
+- It verifies the token with `@clerk/backend`'s `verifyToken`. With `CLERK_SECRET_KEY` it fetches the JWKS; with `CLERK_JWT_KEY` it verifies without a network call.
+- `authorizedParties` is set to `ALLOWED_ORIGINS`. A token minted for another site is rejected, and so is a token with no `azp` claim.
+- Emails are looked up through the Clerk Backend API and cached for 10 minutes. Only verified addresses count.
+- `GET /admin/me` returns the caller (`{method:"clerk", userId, email}` or `{method:"admin_key"}`), and audit logs record the admin's email.
+
+The Settings page shows whether the gateway accepts the current session. The admin key field stays there as a fallback: if the Clerk token gets a 401 or 403, the dashboard retries with the saved key.
+
+### Setup
+
+1. **Clerk dashboard:**
+   - Create an application and enable **Email**, **Google** and **GitHub** (Configure → SSO connections).
+   - Development instances use Clerk's shared OAuth credentials, so this works out of the box.
+   - For a production instance, add your own Google and GitHub OAuth client IDs, and use the redirect URI Clerk shows.
+2. **Dashboard env** (Vercel, or `packages/dashboard/.env.local`):
+
+   ```env
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
+   CLERK_SECRET_KEY=sk_...
+   NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+   NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+   ```
+
+   `NEXT_PUBLIC_*` values are inlined at build time, so redeploy after changing them. Without the publishable key the build still succeeds and the dashboard falls back to the admin key.
+3. **Gateway env** (Render, or `.env`):
+
+   ```env
+   CLERK_SECRET_KEY=sk_...                  # same secret key as the dashboard
+   ADMIN_EMAILS=you@example.com             # and/or ADMIN_USER_IDS=user_...
+   ALLOWED_ORIGINS=https://your-dashboard.vercel.app
+   ```
+
+   `ALLOWED_ORIGINS` must contain the dashboard origin exactly, because Clerk tokens are checked against it. Optionally set `CLERK_JWT_KEY` (the PEM public key from Clerk → API keys) for networkless verification.
+4. Sign in at `/sign-in`. **Settings → Admin Access** should show "Authorized".
+
+No JWT template is needed: the default session token is used, and the email is looked up on the server. If you prefer, add `"email": "{{user.primary_email_address}}"` under Clerk → Sessions → Customize session token, and the gateway will read it from the token instead.
+
 ## API Endpoints
 
 ### Public
@@ -302,7 +357,7 @@ Browsers may call the gateway only from the origins listed in `ALLOWED_ORIGINS` 
 | `GET` | `/v1/models` | List available models |
 | `GET` | `/v1/usage` | Project usage statistics |
 
-### Admin (Admin API Key)
+### Admin (Admin API Key or allowlisted Clerk session)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -317,6 +372,7 @@ Browsers may call the gateway only from the origins listed in `ALLOWED_ORIGINS` 
 | `DELETE` | `/admin/api-keys/:id` | Revoke API key |
 | `GET` | `/admin/analytics/*` | Usage analytics |
 | `GET` | `/admin/audit-logs` | Audit log viewer |
+| `GET` | `/admin/me` | Who is calling (Clerk user or admin key) |
 
 ## Supported Providers
 
@@ -396,6 +452,7 @@ devai-gateway/
 - CORS restricted to `ALLOWED_ORIGINS` (plus localhost outside production)
 - Keys shown only as prefix + last 4 (`AIza…DyMg`) in the dashboard, headers and API
 - Admin/project auth separation
+- Optional Clerk sign-in for the dashboard; admin access limited to `ADMIN_EMAILS` / `ADMIN_USER_IDS`
 - Audit trail for all admin actions
 
 ## Environment Variables
@@ -409,6 +466,11 @@ devai-gateway/
 | `GATEWAY_PORT` | Gateway server port (default: 3001) |
 | `ALLOWED_ORIGINS` | Comma-separated browser origins allowed by CORS (e.g. your dashboard URL), or `*` |
 | `NODE_ENV` | `production` turns off the automatic localhost CORS allowance |
+| `CLERK_SECRET_KEY` | Gateway and dashboard: Clerk secret key (optional, enables Clerk sign-in) |
+| `CLERK_JWT_KEY` | Gateway: Clerk PEM public key for networkless token checks (optional) |
+| `ADMIN_EMAILS` / `ADMIN_USER_IDS` | Gateway: comma-separated Clerk users allowed to use the admin API |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Dashboard: Clerk publishable key (turns on sign-in) |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` / `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Dashboard: `/sign-in`, `/sign-up` |
 | `NEXT_PUBLIC_API_URL` | Gateway URL for dashboard |
 
 ## License
@@ -420,5 +482,5 @@ Private — Internal use only.
 - **Database:** [Neon](https://neon.tech) free plan. **Redis:** [Upstash](https://upstash.com) free plan (use the `rediss://` TCP URL).
 - **Gateway:** deploy `packages/gateway` to Vercel (root directory `packages/gateway`; `api/index.ts` + `vercel.json` are included).
   Env vars: `DATABASE_URL`, `REDIS_URL`, `MASTER_ENCRYPTION_KEY`, `ADMIN_API_KEY`, `NODE_ENV=production`, `ALLOWED_ORIGINS` (your dashboard URL; required for the dashboard to work in production).
-- **Dashboard:** deploy `packages/dashboard` to Vercel (root directory `packages/dashboard`). Env var: `NEXT_PUBLIC_API_URL` = your gateway URL.
+- **Dashboard:** deploy `packages/dashboard` to Vercel (root directory `packages/dashboard`). Env var: `NEXT_PUBLIC_API_URL` = your gateway URL, plus the Clerk variables if you use [Clerk sign-in](#clerk-sign-in-dashboard-login).
 - Run `npm run db:push` once against the production `DATABASE_URL`.

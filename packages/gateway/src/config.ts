@@ -21,6 +21,11 @@ const configSchema = z.object({
   GATEWAY_PORT: z.coerce.number().default(3001),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   ALLOWED_ORIGINS: z.string().optional(),
+  // Optional Clerk sign-in for the admin API (see README "Clerk sign-in").
+  CLERK_SECRET_KEY: z.string().optional(),
+  CLERK_JWT_KEY: z.string().optional(),
+  ADMIN_EMAILS: z.string().optional(),
+  ADMIN_USER_IDS: z.string().optional(),
 });
 
 export const config = configSchema.parse(process.env);

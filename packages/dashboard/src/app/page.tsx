@@ -3,6 +3,7 @@ import {
   ArrowRight, Github, ShieldCheck, Zap, GitBranch, Gauge, Database, KeyRound, BarChart3, FolderKey, Radio, Check,
 } from 'lucide-react';
 import { CodeTabs } from '@/components/landing/code-tabs';
+import { clerkEnabled, SIGN_IN_URL } from '@/lib/clerk';
 
 const ENDPOINT = 'https://devai-gateway.onrender.com/v1/chat/completions';
 const GITHUB = 'https://github.com/ayush8620/DevAI';
@@ -138,9 +139,16 @@ export default function LandingPage() {
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
             <a href={GITHUB} target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors">GitHub</a>
           </nav>
-          <Link href="/dashboard" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
-            Open dashboard <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex items-center gap-2">
+            {clerkEnabled && (
+              <Link href={SIGN_IN_URL} className="hidden sm:inline-flex rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                Sign in
+              </Link>
+            )}
+            <Link href="/dashboard" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
+              Open dashboard <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
       </header>
 

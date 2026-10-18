@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { encrypt, decrypt, maskApiKey } from '../../crypto/encryption.js';
 import { createProvider } from '../../providers/registry.js';
 import { logAudit } from '../../services/audit.js';
+import { adminActor } from '../../auth/admin.js';
 import { logger } from '../../middleware/logger.js';
 import { byPriority } from '../../engine/keys.js';
 import { getKeyUsage } from '../../engine/key-usage.js';
@@ -99,7 +100,7 @@ adminCredentialRoutes.post('/provider/:providerId', async (c) => {
     }).returning();
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'credential.created',
       resourceType: 'credential',
       resourceId: credential.id,
@@ -145,7 +146,7 @@ adminCredentialRoutes.patch('/:id', async (c) => {
     }
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'credential.updated',
       resourceType: 'credential',
       resourceId: id,
@@ -202,7 +203,7 @@ adminCredentialRoutes.delete('/:id', async (c) => {
     }
 
     await logAudit({
-      actor: 'admin',
+      actor: adminActor(c),
       action: 'credential.deleted',
       resourceType: 'credential',
       resourceId: id,

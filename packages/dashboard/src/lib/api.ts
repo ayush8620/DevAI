@@ -1,8 +1,13 @@
+import { getToken } from '@clerk/nextjs';
+import { clerkEnabled } from './clerk';
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-// No admin key is hardcoded: enter it on the Settings page (stored in this
-// browser only). NEXT_PUBLIC_ADMIN_API_KEY is supported for local development,
-// but it is embedded in the client bundle, so never set it on a public deploy.
+// No admin key is hardcoded. When Clerk sign-in is configured the dashboard sends the
+// signed-in user's Clerk session token, and the gateway checks it against ADMIN_EMAILS /
+// ADMIN_USER_IDS. The admin key saved on the Settings page (this browser only) is a
+// fallback. NEXT_PUBLIC_ADMIN_API_KEY is for local development only: it is embedded in
+// the client bundle, so never set it on a public deploy.
 export const DEFAULT_ADMIN_KEY = '';
 
 export function getAdminKey(): string {
@@ -23,25 +28,59 @@ export function setAdminKey(key: string): void {
   }
 }
 
+/** The current Clerk session token, or null (signed out, Clerk not configured, server side). */
+export async function getSessionToken(): Promise<string | null> {
+  if (!clerkEnabled || typeof window === 'undefined') return null;
+  // Right after a sign-in redirect the session can take a moment to become active.
+  // /dashboard is only reachable with a session (middleware), so retry briefly there.
+  const attempts = window.location.pathname.startsWith('/dashboard') ? 4 : 1;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const token = await getToken();
+      if (token) return token;
+    } catch {
+      return null; // Clerk failed to load: fall back to the saved admin key
+    }
+    if (i < attempts - 1) await new Promise(r => setTimeout(r, 250 * (i + 1)));
+  }
+  return null;
+}
+
+/** Bearer tokens to try, in order: the Clerk session, then the saved admin key. */
+async function credentialCandidates(): Promise<string[]> {
+  const out: string[] = [];
+  const session = await getSessionToken();
+  if (session) out.push(session);
+  const adminKey = getAdminKey();
+  if (adminKey && !out.includes(adminKey)) out.push(adminKey);
+  return out.length ? out : [''];
+}
+
 const fetchApi = async (path: string, options?: RequestInit) => {
   const url = `${API_URL}${path}`;
-  const token = getAdminKey();
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...(options?.headers as Record<string, string> || {})
-  };
+  const candidates = await credentialCandidates();
 
   try {
-    const response = await fetch(url, { ...options, headers });
-
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body?.error?.message || `API Error: ${response.status} ${response.statusText}`);
+    let response: Response | undefined;
+    for (let i = 0; i < candidates.length; i++) {
+      const token = candidates[i];
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...(options?.headers as Record<string, string> || {})
+      };
+      response = await fetch(url, { ...options, headers });
+      // Signed in but not an allowed admin (or the session expired): try the saved admin key.
+      if ((response.status === 401 || response.status === 403) && i < candidates.length - 1) continue;
+      break;
     }
 
-    return response.json();
+    if (!response!.ok) {
+      const body = await response!.json().catch(() => ({}));
+      throw new Error(body?.error?.message || `API Error: ${response!.status} ${response!.statusText}`);
+    }
+
+    return response!.json();
   } catch (err: any) {
     if (err.name === 'TypeError' && err.message.includes('fetch')) {
       throw new Error('Gateway is not reachable. Is it running on ' + API_URL + '?');
@@ -51,6 +90,9 @@ const fetchApi = async (path: string, options?: RequestInit) => {
 };
 
 export const api = {
+  // Who the gateway thinks we are (Clerk user or admin key)
+  getMe: () => fetchApi('/admin/me').then(r => r.data || r),
+
   // Analytics
   getOverview: () => fetchApi('/admin/analytics/overview').then(r => r.data || r),
   getRecentRequests: () => fetchApi('/admin/analytics/recent-requests').then(r => r.data || r),

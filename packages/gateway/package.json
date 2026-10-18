@@ -19,6 +19,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/backend": "^3.25.0",
     "@hono/node-server": "^1.13.0",
     "@hono/zod-validator": "^0.4.0",
     "@neondatabase/serverless": "^0.10.0",
@@ -39,6 +40,7 @@
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
+    "jose": "^6.2.12",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^4.1.12"

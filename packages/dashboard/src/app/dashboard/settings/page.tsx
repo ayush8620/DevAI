@@ -1,13 +1,21 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { api, API_URL, getAdminKey, setAdminKey } from '@/lib/api';
-import { RefreshCw, Server, ShieldCheck, Key, Check } from 'lucide-react';
+import { clerkEnabled } from '@/lib/clerk';
+import { RefreshCw, Server, ShieldCheck, Key, Check, UserCheck } from 'lucide-react';
 
 export default function SettingsPage() {
   const [health, setHealth] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [adminKeyInput, setAdminKeyInput] = useState('');
   const [savedKey, setSavedKey] = useState(false);
+  const [me, setMe] = useState<{ method: string; email?: string | null; userId?: string } | null>(null);
+  const [meError, setMeError] = useState<string | null>(null);
+
+  const loadMe = () => {
+    setMeError(null);
+    api.getMe().then(setMe).catch((e: Error) => { setMe(null); setMeError(e.message); });
+  };
 
   const loadHealth = () => {
     setRefreshing(true);
@@ -19,6 +27,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadHealth();
+    loadMe();
     setAdminKeyInput(getAdminKey());
   }, []);
 
@@ -28,6 +37,7 @@ export default function SettingsPage() {
     setSavedKey(true);
     setTimeout(() => setSavedKey(false), 2000);
     loadHealth();
+    loadMe();
   };
 
   return (
@@ -46,6 +56,36 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid gap-6">
+        {/* Who the gateway sees */}
+        <div className="border rounded-xl p-6 bg-card space-y-3 shadow-sm">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <UserCheck className="h-5 w-5 text-primary" />
+            Admin Access
+          </h2>
+          {me ? (
+            <p className="text-sm">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mr-2 rounded-full text-xs font-semibold bg-green-500/10 text-green-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Authorized
+              </span>
+              {me.method === 'clerk'
+                ? <>Signed in with Clerk{me.email ? <> as <span className="font-medium">{me.email}</span></> : null}.</>
+                : <>Using the admin API key saved below.</>}
+            </p>
+          ) : (
+            <p className="text-sm">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mr-2 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Not authorized
+              </span>
+              <span className="text-muted-foreground">{meError || 'Checking…'}</span>
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {clerkEnabled
+              ? 'The dashboard sends your Clerk session to the gateway. Only accounts listed in the gateway\'s ADMIN_EMAILS or ADMIN_USER_IDS are allowed.'
+              : 'Clerk sign-in is not configured for this dashboard, so it uses the admin API key below.'}
+          </p>
+        </div>
+
         {/* Admin Authentication Token */}
         <div className="border rounded-xl p-6 bg-card space-y-4 shadow-sm">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -53,7 +93,9 @@ export default function SettingsPage() {
             Admin Dashboard Authorization
           </h2>
           <p className="text-sm text-muted-foreground">
-            The secret key used by the dashboard to authenticate with the Gateway administrative endpoints.
+            {clerkEnabled
+              ? 'Optional fallback: the gateway ADMIN_API_KEY, used only if your Clerk session is not accepted. Stored in this browser only; leave empty and save to remove it.'
+              : 'The gateway ADMIN_API_KEY used by the dashboard for the admin endpoints. Stored in this browser only.'}
           </p>
           <form onSubmit={handleSaveKey} className="flex gap-2">
             <input
@@ -62,7 +104,6 @@ export default function SettingsPage() {
               onChange={e => setAdminKeyInput(e.target.value)}
               className="flex-1 bg-background border px-3 py-2 rounded-lg font-mono text-xs"
               placeholder="dvai_admin_..."
-              required
             />
             <button
               type="submit"

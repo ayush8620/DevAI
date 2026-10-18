@@ -125,6 +125,8 @@ export type AppEnv = {
     requestId: string;
     projectId: string;
     project: any;
+    /** Set on /admin routes: how the caller authenticated. */
+    adminAuth?: { method: 'admin_key' } | { method: 'clerk'; userId: string; email?: string };
   };
 };
 
