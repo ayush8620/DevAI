@@ -1,6 +1,6 @@
 import { Hono, Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { routeRequest, routeStreamRequest, RoutingError, AllProvidersFailedError } from '../../engine/router.js';
+import { routeRequest, routeStreamRequest, RoutingError, AllProvidersFailedError, routingErrorStatus } from '../../engine/router.js';
 import { CandidateResult, RouteOutcome, StreamOutcome, OpenStream, responseToStream } from '../../engine/strategies.js';
 import { recordKeyUse } from '../../engine/key-usage.js';
 import { ChatResponse, ChatUsage, ChatRequest } from '../../types/index.js';
@@ -89,8 +89,13 @@ chatRoutes.post('/completions', async (c: Context<AppEnv>) => {
   const headerMode = c.req.header('x-devai-mode');
   const headerKeyStrategy = c.req.header('x-devai-key-strategy');
   const projectRouting = project?.routing;
-  // Personal pool and hackathon kit projects route only over their owner's pooled keys.
-  const poolOwnerUserId: string | null = project?.kind === 'pool' || project?.kind === 'kit' ? (project?.ownerUserId ?? null) : null;
+  // Bring-your-own-key: a project that belongs to a user (personal pool, hackathon kit, or any
+  // project with an owner) routes only over that owner's keys. Only the admin's own "app"
+  // projects (no owner) use the shared, admin-managed providers.
+  const poolOwnerUserId: string | null = project?.ownerUserId ?? null;
+  if (project && (project.kind ?? 'app') !== 'app' && !poolOwnerUserId) {
+    return c.json({ error: { type: 'no_provider_keys', message: 'This API key has no owner, so it has no provider keys to use.', request_id: requestId } }, 400);
+  }
 
   // Hackathon kit: expiry, revocation, allowed models and caps.
   const kit = c.get('kit') as KitRow | undefined;
@@ -218,12 +223,12 @@ function errorResponse(c: Context<AppEnv>, error: any, request: ChatRequest, { r
 
   recordUsage({
     requestId, projectId, model: request.model, latencyMs,
-    status: error instanceof RoutingError ? 503 : 500, cacheHit: false, error: error.message,
+    status: error instanceof RoutingError ? routingErrorStatus(error.code) : 500, cacheHit: false, error: error.message,
   }).catch(() => {});
 
   if (error instanceof RoutingError) {
     logger.warn({ requestId, code: error.code, message: error.message }, 'Routing error');
-    return c.json({ error: { type: error.code, message: error.message, request_id: requestId } }, 503);
+    return c.json({ error: { type: error.code, message: error.message, request_id: requestId } }, routingErrorStatus(error.code));
   }
 
   logger.error({ requestId, err: error.message }, 'Chat completion error');

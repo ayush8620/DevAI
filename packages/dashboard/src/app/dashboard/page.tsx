@@ -1,17 +1,59 @@
 "use client";
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Activity, Zap, Database, Clock, BookOpen } from 'lucide-react';
-import { api } from '@/lib/api';
+import { Activity, Zap, Database, Clock, BookOpen, KeyRound, ArrowRight } from 'lucide-react';
+import { api, userApi } from '@/lib/api';
+import { clerkEnabled } from '@/lib/clerk';
+import { ByokOnboarding } from '@/components/byok/onboarding';
+
+/** Health of the signed-in user's own provider keys (bring your own key). */
+function KeyHealthCard({ pool }: { pool: any }) {
+  const keys: any[] = pool?.keys ?? [];
+  const count = (h: string) => keys.filter(k => k.health === h).length;
+  const items = [
+    { label: 'Healthy', n: count('healthy') + count('unused'), cls: 'text-green-500' },
+    { label: 'Cooling down', n: count('cooling_down') + count('quota_exhausted'), cls: 'text-amber-500' },
+    { label: 'Error', n: count('error'), cls: 'text-red-400' },
+    { label: 'Disabled', n: count('disabled'), cls: 'text-muted-foreground' },
+  ];
+  const providers = Array.from(new Set(keys.map(k => String(k.providerName))));
+  return (
+    <div className="rounded-xl border bg-card p-5 sm:p-6 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-primary"><KeyRound className="h-4 w-4" /></span>
+          <div>
+            <h3 className="font-semibold leading-none tracking-tight">Your provider keys</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{keys.length} key{keys.length === 1 ? '' : 's'}{providers.length ? ` · ${providers.join(', ')}` : ''} · your requests use only these</p>
+          </div>
+        </div>
+        <Link href="/dashboard/pool" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">Manage <ArrowRight className="h-3 w-3" /></Link>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {items.map(i => (
+          <div key={i.label} className="rounded-lg border bg-background/40 px-3 py-2">
+            <p className="text-[11px] text-muted-foreground">{i.label}</p>
+            <p className={`text-xl font-bold ${i.cls}`}>{i.n}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 
 export default function Dashboard() {
   const [overview, setOverview] = useState<any>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(!clerkEnabled);
+  const [pool, setPool] = useState<any>(null);
 
   useEffect(() => {
+    // Every signed-in user: their own keys and the bring-your-own-key onboarding
+    if (clerkEnabled) userApi.getPool().then(setPool).catch(() => {});
     Promise.all([
-      api.getOverview().catch(() => ({ requestsToday: 0, tokensToday: 0, cacheHitRate: 0, avgLatencyMs: 0 })),
+      api.getOverview().then(o => { setIsAdmin(true); return o; }).catch(() => ({ requestsToday: 0, tokensToday: 0, cacheHitRate: 0, avgLatencyMs: 0 })),
       api.getRecentRequests().catch(() => [])
     ]).then(([o, r]) => {
       setOverview(o);
@@ -26,13 +68,17 @@ export default function Dashboard() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Dashboard</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">Overview</h1>
-          <p className="text-muted-foreground mt-1">Today&apos;s traffic through the gateway and the latest requests.</p>
+          <p className="text-muted-foreground mt-1">{isAdmin ? 'Your provider keys, today\u2019s traffic through the gateway and the latest requests.' : 'Your provider keys and how to call the gateway with them.'}</p>
         </div>
         <Link href="/docs" className="inline-flex items-center gap-2 self-start sm:self-auto rounded-lg border bg-card px-3.5 py-2 text-sm font-medium hover:bg-muted transition-colors">
           <BookOpen className="h-4 w-4" /> API docs
         </Link>
       </div>
 
+      {pool?.onboarding && <ByokOnboarding nextStep={pool.onboarding.nextStep} />}
+      {pool && pool.keys?.length > 0 && <KeyHealthCard pool={pool} />}
+
+      {(isAdmin || loading) && <>
       <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
         {[ 
           { title: 'Requests Today', value: overview?.requestsToday, icon: Activity },
@@ -96,6 +142,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      </>}
     </div>
   );
 }

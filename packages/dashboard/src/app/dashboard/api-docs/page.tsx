@@ -33,7 +33,7 @@ const client = new OpenAI({
 });
 
 const completion = await client.chat.completions.create({
-  model: 'auto', // or 'gpt-4o', 'claude-3-5-sonnet', 'gemini-2.5-flash'
+  model: 'auto', // or any model your provider keys support, e.g. 'gpt-4o-mini', 'llama-3.1-8b-instant'
   messages: [{ role: 'user', content: 'Explain binary search' }],
 });
 
@@ -42,17 +42,17 @@ console.log(completion.choices[0].message.content);`;
   const streamExample = `curl -N ${API_URL}/v1/chat/completions \\
   -H "Authorization: Bearer dvai_your_project_api_key" \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"gemini-2.5-flash","stream":true,
+  -d '{"model":"auto","stream":true,
        "messages":[{"role":"user","content":"Write a haiku about failover"}]}'
 
 # data: {"object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant","content":"Keys"}}]}
 # data: {"object":"chat.completion.chunk","choices":[{"delta":{"content":" rotate..."}}]}
 # data: [DONE]`;
 
-  const keysExample = `// Per provider: Dashboard → Providers → Key strategy
-// Per request (overrides the provider setting):
+  const keysExample = `// Your keys: Dashboard → Your keys → Rotation
+// Per request (overrides the setting):
 {
-  "model": "gemini-2.5-flash",
+  "model": "auto",
   "messages": [{ "role": "user", "content": "hi" }],
   "devai": { "keyStrategy": "round_robin" }  // failover | round_robin | random | least_used
 }
@@ -75,7 +75,10 @@ console.log(completion.choices[0].message.content);`;
           <h2 className="text-xl font-semibold">Authentication</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          All client requests to <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">/v1/*</code> must include your project API key in the Authorization header.
+          All client requests to <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">/v1/*</code> must include your DevAI API key in the Authorization header.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          <strong className="text-foreground">Bring your own key:</strong> a key created under <a href="/dashboard/pool" className="text-primary hover:underline">Your keys</a> runs only on the provider keys you added there. With none added, requests return <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">400 no_provider_keys</code>.
         </p>
         <div className="relative rounded-lg bg-zinc-950 p-4 font-mono text-xs text-zinc-100 dark:bg-zinc-900 border border-border">
           <button

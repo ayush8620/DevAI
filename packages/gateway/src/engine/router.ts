@@ -3,7 +3,7 @@ import { createProvider } from '../providers/registry.js';
 import { db } from '../db/index.js';
 import { providers, providerCredentials, models } from '../db/schema/index.js';
 import { decrypt } from '../crypto/encryption.js';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, inArray } from 'drizzle-orm';
 import { scoreCandidates } from './scorer.js';
 import { checkQuota } from './quota.js';
 import { cacheGet, cacheSet } from '../cache/redis.js';
@@ -56,21 +56,32 @@ type ProviderRow = typeof providers.$inferSelect;
 type CredentialRow = typeof providerCredentials.$inferSelect;
 
 /**
- * Providers a request may use: the shared, admin-managed ones, or, for a personal pool /
- * hackathon kit project, only the providers (and keys) owned by that user.
+ * Providers a request may use. Bring-your-own-key: a user's pool / hackathon kit project
+ * only ever sees the providers (and keys) owned by that user. The shared, admin-managed
+ * providers (owner_user_id IS NULL) only serve the admin's own "app" projects; they are
+ * never a fallback for anyone else's traffic.
  */
 async function loadPool(ownerUserId?: string | null) {
   const allProviders = await db.select().from(providers).where(and(
     eq(providers.status, 'active'),
     ownerUserId ? eq(providers.ownerUserId, ownerUserId) : isNull(providers.ownerUserId),
   ));
+  if (!allProviders.length) return { allProviders, allCredentials: [] as CredentialRow[] };
   // Keys that failed a test ('error') stay in the pool: routing cools them down on
   // failure and they recover automatically. Only disabled/revoked keys are excluded.
   const allCredentials = (await db.select().from(providerCredentials)
-    .where(eq(providerCredentials.enabled, true)))
+    .where(and(eq(providerCredentials.enabled, true), inArray(providerCredentials.providerId, allProviders.map(p => p.id)))))
     .filter(c => !['disabled', 'revoked'].includes(String(c.status ?? 'active')));
   return { allProviders, allCredentials };
 }
+
+/** HTTP status for a routing error: setup problems the caller can fix are 4xx. */
+export function routingErrorStatus(code: string): 400 | 503 {
+  return code === 'no_provider_keys' || code === 'no_provider_for_model' || code === 'no_eligible_providers' ? 400 : 503;
+}
+
+export const NO_KEYS_MESSAGE = 'no_provider_keys: add your own provider key in the dashboard (Your keys → Add a key), then retry. DevAI never uses shared keys for your requests.';
+const NO_SHARED_KEYS_MESSAGE = 'no_provider_keys: this project has no provider keys yet. Add a provider and a key under Dashboard → Shared providers.';
 
 function matchProvider(all: ProviderRow[], ref: string): ProviderRow[] {
   const r = ref.toLowerCase();
@@ -143,10 +154,9 @@ function autoModelFor(p: ProviderRow, requested: string): string {
 
 export async function buildTargets(request: ChatRequest, routing: ResolvedRouting, ownerUserId?: string | null) {
   const { allProviders, allCredentials } = await loadPool(ownerUserId);
-  if (!allProviders.length) {
-    throw new RoutingError(ownerUserId ? 'Your key pool is empty: add a provider key in the dashboard (Key pool)' : 'No providers configured', 'no_providers');
+  if (!allProviders.length || !allCredentials.length) {
+    throw new RoutingError(ownerUserId ? NO_KEYS_MESSAGE : NO_SHARED_KEYS_MESSAGE, 'no_provider_keys');
   }
-  if (!allCredentials.length) throw new RoutingError('No active credentials available', 'no_credentials');
   const skipped: CandidateResult[] = [];
 
   // Explicit priority list (from the request or the app's settings)
@@ -169,6 +179,10 @@ export async function buildTargets(request: ChatRequest, routing: ResolvedRoutin
     const anyModel = Boolean(p.ownerUserId && p.baseUrl);
     if (request.model !== 'auto' && !anyModel && !(await isModelSupported(p.type, request.model, p.id))) continue;
     pairs.push({ p, model: autoModelFor(p, request.model) });
+  }
+  if (!pairs.length) {
+    const types = [...new Set(allProviders.map(p => p.name))].join(', ');
+    throw new RoutingError(`no_provider_for_model: none of your provider keys (${types}) serves model "${request.model}". Add a key for that provider, pick it with devai.providers, or use model "auto".`, 'no_provider_for_model');
   }
   const targets = await toTargets(pairs, allCredentials, skipped, routing);
   // Order providers (configured priority, then best recent latency of any key); keys keep their strategy order.

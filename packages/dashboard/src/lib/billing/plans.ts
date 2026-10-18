@@ -15,7 +15,7 @@ export interface PlanLimits {
   projects: number;
   /** Provider API keys that can be added in total */
   providerKeys: number;
-  /** Own keys in the personal key pool (enforced by the gateway); null = unlimited */
+  /** User's own provider keys (bring your own key; enforced by the gateway); null = unlimited */
   pooledKeys: number | null;
   /** Can create hackathon kits (enforced by the gateway) */
   kits: boolean;
@@ -48,9 +48,9 @@ export const PLANS: readonly Plan[] = [
     limits: { requestsPerDay: 100, projects: 1, providerKeys: 2, pooledKeys: 2, kits: false },
     features: [
       'OpenAI-compatible endpoint with streaming',
-      'All providers: Gemini, OpenAI, Anthropic, Groq, Ollama',
+      'Bring your own key: OpenAI, Anthropic, Gemini, Groq, OpenRouter, Mistral',
       'Automatic failover across keys and providers',
-      'Personal key pool: rotate up to 2 of your own free keys',
+      'Up to 2 of your own provider keys, rotated automatically',
       'Failover key strategy',
       'Usage dashboard',
     ],
@@ -64,7 +64,7 @@ export const PLANS: readonly Plan[] = [
     limits: { requestsPerDay: 2_000, projects: 3, providerKeys: 5, pooledKeys: 10, kits: false },
     features: [
       'Everything in Free',
-      'Personal key pool with up to 10 of your own free keys',
+      'Up to 10 of your own provider keys',
       'All key strategies: failover, round robin, random, least used',
       'fastest and best parallel routing modes',
       'Response caching',

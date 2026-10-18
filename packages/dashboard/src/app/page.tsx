@@ -10,16 +10,22 @@ import { paymentsEnabled } from '@/lib/billing/razorpay';
 
 const ENDPOINT = 'https://devai-gateway.onrender.com/v1/chat/completions';
 
-const providers = ['Google Gemini', 'OpenAI', 'Anthropic', 'Groq', 'Ollama Cloud'];
+// Bring your own key: DevAI ships with no provider key of its own; users add theirs.
+const providers = ['OpenAI', 'Anthropic', 'Google Gemini', 'Groq', 'OpenRouter', 'Mistral', 'Ollama Cloud'];
 
 const features = [
+  {
+    icon: KeyRound,
+    title: 'Bring your own key',
+    body: 'DevAI has no provider keys of its own. You add your OpenAI, Anthropic, Gemini, Groq, OpenRouter or Mistral keys, and your requests run only on them, billed by each provider to you.',
+  },
   {
     icon: ShieldCheck,
     title: 'Failover + circuit breaker',
     body: 'If a provider errors, times out or rate-limits, DevAI retries the same request on the next one. Failing targets are skipped for a cooldown so users never wait on a dead endpoint.',
   },
   {
-    icon: KeyRound,
+    icon: Layers,
     title: 'Many keys per provider',
     body: 'Add several API keys to one provider. A rate-limited or invalid key is cooled down on its own and the request moves to the next key. Choose failover, round robin, random or least used.',
   },
@@ -61,10 +67,10 @@ const features = [
 ];
 
 const curl = `curl ${ENDPOINT} \\
-  -H "Authorization: Bearer dvai_your_app_key" \\
+  -H "Authorization: Bearer dvai_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gemini-2.5-flash",
+    "model": "auto",
     "messages": [{ "role": "user", "content": "Explain binary search in one line" }],
     "max_tokens": 200
   }'`;
@@ -73,27 +79,27 @@ const sdk = `import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "https://devai-gateway.onrender.com/v1",
-  apiKey: process.env.DEVAI_KEY, // your dvai_ app key
+  apiKey: process.env.DEVAI_KEY, // your dvai_ key (runs on your own provider keys)
 });
 
 const res = await client.chat.completions.create({
-  model: "gemini-2.5-flash",
+  model: "auto", // or any model your keys support, e.g. "gpt-4o-mini"
   messages: [{ role: "user", content: "Explain binary search in one line" }],
 });
 
 console.log(res.choices[0].message.content);`;
 
 const stream = `curl -N ${ENDPOINT} \\
-  -H "Authorization: Bearer dvai_your_app_key" \\
+  -H "Authorization: Bearer dvai_your_key" \\
   -H "Content-Type: application/json" \\
-  -d '{ "model": "gemini-2.5-flash", "stream": true,
+  -d '{ "model": "llama-3.1-8b-instant", "stream": true,
         "messages": [{ "role": "user", "content": "Write a haiku about failover" }] }'
 
 # data: {"object":"chat.completion.chunk","choices":[{"delta":{"content":"..."}}]}
 # data: [DONE]`;
 
 const parallel = `curl ${ENDPOINT} \\
-  -H "Authorization: Bearer dvai_your_app_key" \\
+  -H "Authorization: Bearer dvai_your_key" \\
   -H "Content-Type: application/json" \\
   -H "x-devai-mode: fastest" \\
   -d '{ "model": "auto",
@@ -101,7 +107,7 @@ const parallel = `curl ${ENDPOINT} \\
         "devai": { "keyStrategy": "round_robin" } }'
 
 # Response headers tell you what happened:
-# x-devai-provider: Gemini/gemini-2.5-flash
+# x-devai-provider: Groq/llama-3.1-8b-instant
 # x-devai-fallbacks: 0   x-devai-key-fallbacks: 1`;
 
 function Section({ id, eyebrow, title, children, className = '' }: { id?: string; eyebrow: string; title: string; children: React.ReactNode; className?: string }) {
@@ -131,13 +137,13 @@ export default function LandingPage() {
           <div className="mx-auto max-w-6xl grid gap-12 lg:grid-cols-[1.05fr_1fr] lg:items-center">
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border bg-card/60 px-3 py-1 text-xs text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Open source · Free plan available
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Open source · Bring your own key · Free plan available
               </span>
               <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
                 One OpenAI-compatible endpoint for <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">many AI providers</span>
               </h1>
               <p className="mt-6 max-w-xl text-base sm:text-lg text-muted-foreground leading-relaxed">
-                Point your app at DevAI instead of a single provider. It routes each request across Gemini, OpenAI, Anthropic, Groq and Ollama, fails over automatically, can race providers in parallel, and shows you every token in one dashboard.
+                Bring your own keys from OpenAI, Anthropic, Gemini, Groq, OpenRouter or Mistral. DevAI routes each request over your keys only, fails over automatically, can race providers in parallel, and shows you every token in one dashboard.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
                 <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90">
@@ -151,7 +157,7 @@ export default function LandingPage() {
                 </Link>
               </div>
               <div className="mt-10">
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">Works with</p>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Works with your keys from</p>
                 <ul className="mt-3 flex flex-wrap gap-2">
                   {providers.map(p => (
                     <li key={p} className="rounded-md border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">{p}</li>
@@ -171,8 +177,8 @@ export default function LandingPage() {
           <div className="grid gap-4 md:grid-cols-2">
             {[
               {
-                icon: Layers, title: 'Free-key pooling', tag: 'Free: 2 keys · Student: 10 · Pro & Team: unlimited', href: '/dashboard/pool',
-                body: 'Drop your free Gemini, Groq and OpenRouter keys into a personal pool. DevAI rotates across them, parks a key for a cooldown the moment it hits a 429 and carries on with the next, and shows how far your free quota was stretched.',
+                icon: Layers, title: 'Bring your own keys, pooled', tag: 'Free: 2 keys · Student: 10 · Pro & Team: unlimited', href: '/dashboard/pool',
+                body: 'Add your own keys from any provider, including free tiers like Gemini, Groq and OpenRouter. DevAI rotates across them, parks a key for a cooldown the moment it hits a 429 and carries on with the next, and shows how far your free quota was stretched. Your requests never touch anyone else’s keys.',
               },
               {
                 icon: Trophy, title: 'Hackathon kits', tag: 'Included in Team', href: '/dashboard/kits',
@@ -235,9 +241,9 @@ export default function LandingPage() {
           <div className="grid gap-10 lg:grid-cols-[1fr_1.4fr] lg:items-start">
             <ol className="space-y-6">
               {[
-                ['Add a provider', 'Open the dashboard, add Gemini, OpenAI, Anthropic, Groq or Ollama and paste one or more API keys.'],
-                ['Create an app key', 'Create a project and generate its dvai_ key. Each app gets its own key and usage stats.'],
-                ['Call the endpoint', 'Use any OpenAI client or plain HTTP with the DevAI base URL. Streaming works the same way.'],
+                ['Add your provider keys', 'Sign in, open Your keys and paste one or more keys from OpenAI, Anthropic, Gemini, Groq, OpenRouter or Mistral. They are encrypted and used only for you.'],
+                ['Create your DevAI key', 'Generate a dvai_ key. Requests with it run only on your keys; with no key added you get a clear no_provider_keys error, never someone else’s quota.'],
+                ['Call the endpoint', 'Use any OpenAI client or plain HTTP with the DevAI base URL and model "auto" or any model your keys support. Streaming works the same way.'],
               ].map(([t, d], i) => (
                 <li key={t} className="flex gap-4">
                   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border bg-card text-sm font-semibold">{i + 1}</span>

@@ -112,7 +112,7 @@ const fetchUser = async (path: string, options?: RequestInit) => {
 };
 
 export const userApi = {
-  // Personal key pool
+  // Your provider keys (bring your own key)
   getPool: () => fetchUser('/user/pool').then(r => r.data),
   addPoolKey: (data: { provider: string; name?: string; apiKey: string; defaultModel?: string; quotaLimit?: number | null }) =>
     fetchUser('/user/pool/keys', { method: 'POST', body: JSON.stringify(data) }).then(r => r.data),
@@ -123,6 +123,9 @@ export const userApi = {
     fetchUser('/user/pool/strategy', { method: 'PUT', body: JSON.stringify({ keyStrategy }) }).then(r => r.data),
   createPoolApiKey: (name: string) => fetchUser('/user/pool/api-keys', { method: 'POST', body: JSON.stringify({ name }) }).then(r => r.data),
   revokePoolApiKey: (id: string) => fetchUser(`/user/pool/api-keys/${id}`, { method: 'DELETE' }).then(r => r.data),
+  // Per-user key health (cheap authenticated call per key, no tokens)
+  testPoolKey: (id: string) => fetchUser(`/user/pool/keys/${id}/test`, { method: 'POST' }).then(r => r.data),
+  checkPoolHealth: () => fetchUser('/user/pool/health', { method: 'POST' }).then(r => r.data),
 
   // Hackathon kits
   getKits: () => fetchUser('/user/kits').then(r => r.data),

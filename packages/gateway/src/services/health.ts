@@ -44,25 +44,7 @@ export async function checkProviderHealth(providerId: string): Promise<HealthRes
     return { providerId, providerName: providerDef.name, providerType: providerDef.type, status: 'disabled', latencyMs: 0, error: 'No active credentials' };
   }
 
-  const provider = createProvider(providerDef.type, providerDef.id, providerDef.name, providerDef.baseUrl || undefined);
-  const keys: KeyHealth[] = await Promise.all(creds.map(async (cred): Promise<KeyHealth> => {
-    let apiKey = '';
-    try {
-      apiKey = decrypt({ ciphertext: cred.encryptedKey, iv: cred.iv, authTag: cred.authTag });
-      const result = await provider.healthCheck(apiKey);
-      const status = result.healthy ? (result.latencyMs > 5000 ? 'degraded' : 'healthy') : 'unhealthy';
-      return { credentialId: cred.id, name: cred.name, key: maskSecret(apiKey), status, latencyMs: result.latencyMs, error: result.healthy ? undefined : 'health check failed' };
-    } catch (err: any) {
-      return { credentialId: cred.id, name: cred.name, key: maskSecret(apiKey), status: 'unhealthy', latencyMs: 0, error: String(err?.message || err).slice(0, 200) };
-    }
-  }));
-
-  for (const k of keys) {
-    await cacheSet(`health:key:${k.credentialId}`, k.status, 300);
-    await db.insert(healthChecks).values({
-      providerId, credentialId: k.credentialId, status: k.status, latencyMs: k.latencyMs, error: k.error,
-    }).catch(() => {});
-  }
+  const keys: KeyHealth[] = await Promise.all(creds.map(cred => checkCredentialHealth(providerDef, cred)));
 
   const working = keys.filter(k => k.status !== 'unhealthy');
   const status: HealthResult['status'] = !working.length ? 'unhealthy' : working.some(k => k.status === 'healthy') ? 'healthy' : 'degraded';
@@ -74,6 +56,47 @@ export async function checkProviderHealth(providerId: string): Promise<HealthRes
     error: working.length ? undefined : keys[0]?.error,
     keys,
   };
+}
+
+type ProviderRow = typeof providers.$inferSelect;
+type CredentialRow = typeof providerCredentials.$inferSelect;
+
+/**
+ * Test one key with a cheap, authenticated call (list models; no tokens spent) and record
+ * the result: routing skips a key that failed its last check for 5 minutes.
+ */
+export async function checkCredentialHealth(p: ProviderRow, cred: CredentialRow): Promise<KeyHealth> {
+  let apiKey = '';
+  let result: KeyHealth;
+  try {
+    apiKey = decrypt({ ciphertext: cred.encryptedKey, iv: cred.iv, authTag: cred.authTag });
+    const r = await testKey(p, apiKey);
+    const status = r.healthy ? (r.latencyMs > 5000 ? 'degraded' : 'healthy') : 'unhealthy';
+    result = { credentialId: cred.id, name: cred.name, key: maskSecret(apiKey), status, latencyMs: r.latencyMs, error: r.healthy ? undefined : (r.error || 'health check failed') };
+  } catch (err: any) {
+    result = { credentialId: cred.id, name: cred.name, key: apiKey ? maskSecret(apiKey) : '••••', status: 'unhealthy', latencyMs: 0, error: String(err?.message || err).slice(0, 200) };
+  }
+  await cacheSet(`health:key:${cred.id}`, result.status, 300).catch(() => {});
+  await db.insert(healthChecks).values({
+    providerId: p.id, credentialId: cred.id, status: result.status, latencyMs: result.latencyMs, error: result.error,
+  }).catch(() => {});
+  return result;
+}
+
+async function testKey(p: ProviderRow, apiKey: string): Promise<{ healthy: boolean; latencyMs: number; error?: string }> {
+  // OpenRouter's model list is public, so it would accept any key: check the key itself.
+  if (p.baseUrl && /openrouter\.ai/i.test(p.baseUrl)) {
+    const start = Date.now();
+    try {
+      const res = await fetch(`${p.baseUrl.replace(/\/$/, '')}/key`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10000) });
+      return { healthy: res.ok, latencyMs: Date.now() - start, error: res.ok ? undefined : `OpenRouter rejected the key (${res.status})` };
+    } catch (err: any) {
+      return { healthy: false, latencyMs: Date.now() - start, error: String(err?.message || err).slice(0, 200) };
+    }
+  }
+  const provider = createProvider(p.type, p.id, p.name, p.baseUrl || undefined);
+  const r = await provider.healthCheck(apiKey);
+  return { ...r, error: r.healthy ? undefined : `${p.name} rejected the key or did not answer` };
 }
 
 export async function checkAllProviders(): Promise<HealthResult[]> {
@@ -89,18 +112,13 @@ export async function checkAllProviders(): Promise<HealthResult[]> {
   }));
 }
 
-// The public /v1/health endpoint reuses recent provider checks instead of calling every provider on each hit.
+// The public /v1/health endpoint never calls a provider itself: it reports the gateway,
+// database and Redis, plus the last background check of the shared providers if there are
+// any. DevAI is bring-your-own-key, so having no shared provider is normal and healthy.
 let lastProviderCheck: { at: number; results: HealthResult[] } | null = null;
-const PUBLIC_HEALTH_TTL_MS = 30000;
 
 export async function getHealthStatus() {
-  let providerResults: HealthResult[];
-  if (lastProviderCheck && Date.now() - lastProviderCheck.at < PUBLIC_HEALTH_TTL_MS) {
-    providerResults = lastProviderCheck.results;
-  } else {
-    providerResults = await checkAllProviders();
-    lastProviderCheck = { at: Date.now(), results: providerResults };
-  }
+  const providerResults: HealthResult[] = lastProviderCheck?.results ?? [];
 
   // Check Redis
   let redisStatus = 'healthy';
@@ -113,35 +131,30 @@ export async function getHealthStatus() {
   // Check Database
   let dbStatus = 'healthy';
   try {
-    await db.select().from(providers).limit(1);
+    await db.select({ id: providers.id }).from(providers).limit(1);
   } catch {
     dbStatus = 'unhealthy';
   }
 
-  const allHealthy = providerResults.every(r => r.status === 'healthy');
-  const anyUnhealthy = providerResults.some(r => r.status === 'unhealthy');
-
   return {
-    // Redis is optional (cache/cooldowns fall back to memory), so it only degrades the gateway
-    status: dbStatus === 'unhealthy'
-      ? 'unhealthy'
-      : redisStatus === 'unhealthy' || anyUnhealthy
-        ? 'degraded'
-        : allHealthy
-          ? 'healthy'
-          : 'degraded',
+    // Redis is optional (cache/cooldowns fall back to memory), so it only degrades the gateway.
+    // Provider keys belong to users and are checked per user in the dashboard, so they never
+    // change the gateway status.
+    status: dbStatus === 'unhealthy' ? 'unhealthy' : redisStatus === 'unhealthy' ? 'degraded' : 'healthy',
+    gateway: 'healthy',
+    database: dbStatus,
+    redis: redisStatus,
+    byok: true,
     providers: providerResults.map(r => ({
       id: r.providerId,
       name: r.providerName,
       type: r.providerType,
       status: r.status,
       latencyMs: r.latencyMs,
-      error: r.error,
-      // Public endpoint: key counts only, never key names or hints
+      // Public endpoint: key counts only, never key names, hints or error text
       keys: (r as any).keys ? { total: (r as any).keys.length, healthy: (r as any).keys.filter((k: KeyHealth) => k.status !== 'unhealthy').length } : undefined,
     })),
-    redis: redisStatus,
-    database: dbStatus,
+    providers_checked_at: lastProviderCheck ? new Date(lastProviderCheck.at).toISOString() : null,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
   };
@@ -154,6 +167,7 @@ export function startHealthCheckWorker(intervalMs: number): void {
   setTimeout(async () => {
     try {
       const results = await checkAllProviders();
+      lastProviderCheck = { at: Date.now(), results };
       logger.info({ providers: results.length }, 'Initial health check complete');
     } catch (err: any) {
       logger.error({ err: err.message }, 'Initial health check failed');

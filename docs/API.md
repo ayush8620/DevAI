@@ -4,26 +4,53 @@ Web version: https://devai-dashboard-six.vercel.app/docs
 
 **Base URL:** `https://devai-gateway.onrender.com/v1`
 
-DevAI speaks the OpenAI Chat Completions format: any OpenAI client works by changing the base URL and API key. Behind the endpoint the gateway picks a provider and key, retries on the next key or provider when one fails, and records tokens and latency.
+DevAI speaks the OpenAI Chat Completions format: any OpenAI client works by changing the base URL and API key. It is **bring-your-own-key (BYOK)**: requests run only on provider keys you add yourself. Behind the endpoint the gateway picks one of your providers and keys, retries on the next key or provider when one fails, and records tokens and latency.
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
-| `POST /v1/chat/completions` | project key | Chat completion, JSON or streaming (SSE) |
-| `GET /v1/models` | project key | Models registered in the gateway |
-| `GET /v1/usage` | project key | Usage summary for the calling project |
-| `GET /v1/health` | none | Gateway, database, Redis and provider health |
-| `/admin/*` | admin | Providers, keys, projects, analytics (used by the dashboard) |
-| `/user/*` | Clerk session | Your personal key pool and hackathon kits |
+| `POST /v1/chat/completions` | `dvai_` key | Chat completion on your own provider keys, JSON or streaming (SSE) |
+| `GET /v1/models` | `dvai_` key | Models of the providers your key routes over |
+| `GET /v1/usage` | `dvai_` key | Usage summary for the calling key's project |
+| `GET /v1/health` | none | Gateway, database and Redis health (no provider needed) |
+| `/user/*` | Clerk session | Your provider keys, key health, `dvai_` keys and hackathon kits |
+| `/admin/*` | admin | Shared providers, projects, analytics (admin only) |
 | `GET /public/kits/:shareToken` | none | Hackathon kit status (quota left, expiry) |
 
 Every response has an `X-Request-ID` header. The gateway runs on a free hosting tier, so the first request after a quiet period can be slow while it wakes up.
 
+## Bring your own key
+
+DevAI has no provider keys of its own to lend. Every signed-in user:
+
+1. Adds their own provider keys in the dashboard under **Your keys** (`/dashboard/pool`): OpenAI, Anthropic, Google Gemini, Groq, OpenRouter or Mistral. Keys are encrypted (AES-256-GCM).
+2. Creates a DevAI API key (`dvai_…`) on the same page.
+3. Calls `/v1/chat/completions` with it. The gateway routes **only** over that user's keys.
+
+With no provider key (or all disabled) the gateway answers `400 no_provider_keys` and never falls back to anyone else's keys:
+
+```json
+{ "error": { "type": "no_provider_keys", "message": "no_provider_keys: add your own provider key in the dashboard (Your keys → Add a key), then retry. DevAI never uses shared keys for your requests.", "request_id": "req_…" } }
+```
+
+A model none of your keys serves → `400 no_provider_for_model` (use `"model": "auto"`, `devai.providers`, or add a key for that provider).
+
+| Provider | `provider` id when adding a key | Default model for `auto` |
+|---|---|---|
+| OpenAI | `openai` | `gpt-4o-mini` |
+| Anthropic | `anthropic` | `claude-3-5-haiku-20241022` |
+| Google Gemini | `gemini` | `gemini-2.5-flash` |
+| Groq | `groq` | `llama-3.1-8b-instant` |
+| OpenRouter | `openrouter` | `openrouter/auto` (any model id) |
+| Mistral | `mistral` | `mistral-small-latest` (any model id) |
+
+You can set your own default model per provider when adding a key. The gateway admin may run shared providers (Dashboard → Shared providers) for the admin's own projects; those keys never serve other users' traffic.
+
 ## Authentication
 
-All `/v1` endpoints except `/v1/health` need a project API key (create a project in the dashboard and generate a key; keys start with `dvai_` and are shown once):
+All `/v1` endpoints except `/v1/health` need a DevAI API key (create it under **Your keys**; keys start with `dvai_` and are shown once):
 
 ```
-Authorization: Bearer dvai_your_project_key
+Authorization: Bearer dvai_your_key
 ```
 
 Missing/invalid header, unknown or revoked key, or inactive project → `401 authentication_error`. Keep the key server-side; browsers are only allowed from origins on the gateway's CORS allowlist.
@@ -37,7 +64,7 @@ curl https://devai-gateway.onrender.com/v1/chat/completions \
   -H "Authorization: Bearer $DEVAI_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemini-2.5-flash",
+    "model": "auto",
     "messages": [{ "role": "user", "content": "Explain binary search in one line." }],
     "max_tokens": 200
   }'
@@ -47,7 +74,7 @@ curl https://devai-gateway.onrender.com/v1/chat/completions \
 import OpenAI from "openai";
 const client = new OpenAI({ baseURL: "https://devai-gateway.onrender.com/v1", apiKey: process.env.DEVAI_KEY });
 const completion = await client.chat.completions.create({
-  model: "gemini-2.5-flash",
+  model: "auto", // or any model your keys support, e.g. "gpt-4o-mini"
   messages: [{ role: "user", content: "Explain binary search in one line." }],
 });
 console.log(completion.choices[0].message.content);
@@ -58,7 +85,7 @@ import os
 from openai import OpenAI
 client = OpenAI(base_url="https://devai-gateway.onrender.com/v1", api_key=os.environ["DEVAI_KEY"])
 completion = client.chat.completions.create(
-    model="gemini-2.5-flash",
+    model="auto",  # or e.g. "llama-3.1-8b-instant"
     messages=[{"role": "user", "content": "Explain binary search in one line."}],
 )
 print(completion.choices[0].message.content)
@@ -69,7 +96,7 @@ print(completion.choices[0].message.content)
 | Field | Type | Description |
 |---|---|---|
 | `messages` | array, required | `{ role, content }`; role is `system`, `user` or `assistant`; content is a string |
-| `model` | string | e.g. `gemini-2.5-flash`. Default `auto` (any active provider, its default model) |
+| `model` | string | e.g. `gpt-4o-mini`, `llama-3.1-8b-instant`. Default `auto` (any of your providers, its default model) |
 | `temperature`, `max_tokens`, `top_p` | number | Passed to the provider |
 | `stop` | string \| string[] | Stop sequence(s) |
 | `stream` | boolean | Stream as SSE |
@@ -82,7 +109,7 @@ print(completion.choices[0].message.content)
 | Field | Type | Description |
 |---|---|---|
 | `mode` | `single` \| `fastest` \| `best` | Routing mode (default `single`) |
-| `providers` | array (max 10) | Provider id, name or type (`google`, `openai`, `anthropic`, `groq`, `ollama`), optionally with a model: `"google:gemini-2.5-flash"` or `{ "provider": "groq", "model": "llama-3.1-8b-instant" }` |
+| `providers` | array (max 10) | Provider id, name or type (`google`, `openai`, `anthropic`, `groq`, `ollama`), optionally with a model: `"openai:gpt-4o-mini"` or `{ "provider": "groq", "model": "llama-3.1-8b-instant" }` |
 | `judge` | string \| object | Judge model for `best` |
 | `timeoutMs` | integer 1000–120000 | Per-provider timeout, default 30000 |
 | `keyStrategy` | `failover` \| `round_robin` \| `random` \| `least_used` | How a provider's keys are used |
@@ -107,7 +134,7 @@ Failover finishes before the first byte, so when every provider fails you get a 
 | `fastest` | Up to 5 providers in parallel; first valid answer wins, others are aborted |
 | `best` | Collects every answer; a judge model picks the best (`devai.judge` in the response) |
 
-Precedence: body `devai` → `x-devai-mode` header → project routing defaults → `single`. With `model: "auto"` and no provider list, every active provider takes part, ordered by configured priority then recent latency.
+Precedence: body `devai` → `x-devai-mode` header → project routing defaults → `single`. With `model: "auto"` and no provider list, every provider you have a key for takes part, ordered by configured priority then recent latency.
 
 ## Multi-key strategies
 
@@ -115,12 +142,12 @@ The strategy only changes the order keys are tried in. A failing key always fall
 
 | Strategy | Order |
 |---|---|
-| `failover` | Default. Admin-defined priority order |
-| `round_robin` | Rotates the starting key every request |
+| `failover` | Priority order (oldest key first) |
+| `round_robin` | Default for your keys. Rotates the starting key every request |
 | `random` | Shuffles healthy keys per request |
 | `least_used` | Fewest recent requests first |
 
-Set per provider in the dashboard, or per request with `devai.keyStrategy` or the `x-devai-key-strategy` header (body wins over header, header over project default, project default over provider setting).
+Set it in the dashboard (Your keys → Rotation), or per request with `devai.keyStrategy` or the `x-devai-key-strategy` header (body wins over header, header over project default, project default over provider setting).
 
 ## Headers
 
@@ -140,36 +167,38 @@ Response (chat completions):
 
 ## Caching
 
-Plain requests (mode `single`, no `devai` field) are cached in Redis for 1 hour (`X-Cache: HIT`). Identical concurrent requests share one upstream call. Streams are cached when they finish normally.
+Plain requests on the admin's own projects (mode `single`, no `devai` field) are cached in Redis for 1 hour (`X-Cache: HIT`). Requests on users' own keys are never cached. Identical concurrent requests share one upstream call. Streams are cached when they finish normally.
 
 ## Models, usage, health
 
-- `GET /v1/models` → `{ "object": "list", "data": [{ "id", "object": "model", "created", "owned_by": "devai" }] }`
+- `GET /v1/models` → `{ "object": "list", "data": [{ "id", "object": "model", "created", "owned_by": "<provider name>" }] }`: only models of the providers your key routes over (each provider's default model plus registered models); empty until you add a key
 - `GET /v1/usage?period=today|week|month` → `{ requestCount, inputTokens, outputTokens, totalTokens, avgLatencyMs, cacheHitRate, period }`
-- `GET /v1/health` (public) → `{ status: healthy|degraded|unhealthy, providers: [{ id, name, type, status, latencyMs, error, keys: { total, healthy } }], redis, database, uptime, timestamp }`
+- `GET /v1/health` (public, needs no provider) → `{ status: healthy|degraded|unhealthy, gateway, database, redis, byok: true, providers: [], providers_checked_at, uptime, timestamp }`. `status` reflects the database (unhealthy) and Redis (degraded) only. `providers` lists just the admin's shared providers from the last background check (key counts only, usually empty) and never changes `status`. Your own keys' health: `POST /user/pool/health` or the dashboard.
 
-## Personal key pool
+## Your provider keys (`/user/pool`)
 
-Signed-in users can pool their own provider keys (Gemini, Groq, OpenRouter, OpenAI) in the dashboard under **Key pool**. A pool API key (`dvai_…`) works on `/v1/chat/completions` like a project key, but it routes **only** over that user's keys, with the pool's key strategy. Rate-limited keys cool down and the next key answers. Pool traffic is not cached.
+Signed-in users add their own provider keys (OpenAI, Anthropic, Gemini, Groq, OpenRouter, Mistral) in the dashboard under **Your keys**. Their `dvai_` key routes **only** over those keys, with their rotation strategy. Rate-limited keys cool down and the next key answers. This traffic is never cached.
 
 Limits: Free 2 keys, Student 10, Pro and Team unlimited (`403 plan_limit_reached` beyond the limit).
 
-Pool endpoints use the Clerk session token as `Authorization: Bearer <session JWT>`:
+These endpoints use the Clerk session token as `Authorization: Bearer <session JWT>`:
 
 | Endpoint | Description |
 |---|---|
-| `GET /user/pool` | Plan, limit, strategy, masked keys with `health`, 30-day `stats` (`served`, `tokens`, `rateLimitsAbsorbed`, `stretchFactor`) |
-| `POST /user/pool/keys` | `{ provider, apiKey, name?, defaultModel?, quotaLimit? }` |
+| `GET /user/pool` | Plan, limit, strategy, masked keys with `health` and `lastCheck`, `onboarding` (`hasProviderKey`, `hasApiKey`, `nextStep`: `add_provider_key` \| `create_api_key` \| `done`), 30-day `stats` (`served`, `tokens`, `rateLimitsAbsorbed`, `stretchFactor`) |
+| `POST /user/pool/keys` | `{ provider: openai\|anthropic\|gemini\|groq\|openrouter\|mistral, apiKey, name?, defaultModel?, quotaLimit? }` |
+| `POST /user/pool/health` | Test every enabled key with a cheap authenticated call (no tokens): `{ status: healthy\|degraded\|unhealthy\|no_keys, healthy, total, keys: [...] }`. A failing key is skipped by routing for 5 min |
+| `POST /user/pool/keys/:id/test` | Test one key |
 | `PATCH /user/pool/keys/:id` | `{ enabled?, name? }` |
 | `DELETE /user/pool/keys/:id` | Remove a key |
 | `PUT /user/pool/strategy` | `{ keyStrategy }` |
-| `POST /user/pool/api-keys` / `DELETE /user/pool/api-keys/:id` | Create (shown once) / revoke a pool `dvai_` key |
+| `POST /user/pool/api-keys` / `DELETE /user/pool/api-keys/:id` | Create (shown once) / revoke your `dvai_` key |
 
-`stretchFactor` = answers served by the pool ÷ answers served by the busiest single key.
+`stretchFactor` = answers served by all your keys ÷ answers served by your busiest single key.
 
 ## Hackathon kits
 
-Team plan users can create kits: temporary `dvai_` team keys with a request cap and/or token cap, an end time (≤ 30 days), an optional max team size (≤ 50 keys) and an optional allowed-model list. Kit traffic runs on the owner's key pool. With an allowed-model list, `"model": "auto"` uses the first allowed model. Caps are counted in Redis across all of the kit's keys. Tokens are added when a response finishes, so the last request can go slightly over a token cap.
+Team plan users can create kits: temporary `dvai_` team keys with a request cap and/or token cap, an end time (≤ 30 days), an optional max team size (≤ 50 keys) and an optional allowed-model list. Kit traffic runs on the owner's own provider keys. With an allowed-model list, `"model": "auto"` uses the first allowed model. Caps are counted in Redis across all of the kit's keys. Tokens are added when a response finishes, so the last request can go slightly over a token cap.
 
 | Endpoint | Auth | Description |
 |---|---|---|
@@ -185,6 +214,9 @@ Team plan users can create kits: temporary `dvai_` team keys with a request cap 
 | Status | `error.type` | When |
 |---|---|---|
 | 400 | `invalid_request` | Body not JSON or invalid |
+| 400 | `no_provider_keys` | You have no (enabled) provider key: add one under Your keys. Shared keys are never used instead |
+| 400 | `no_provider_for_model` | None of your provider keys serves the requested model |
+| 400 | `no_eligible_providers` | None of the providers in `devai.providers` are yours |
 | 400 | `validation_error` | Admin API: missing/invalid field |
 | 401 | `authentication_error` | Bad/missing credentials |
 | 403 | `permission_error` | Admin API: Clerk user not allowlisted |
@@ -192,7 +224,6 @@ Team plan users can create kits: temporary `dvai_` team keys with a request cap 
 | 409 | `conflict` | Admin API: model already exists |
 | 500 | `server_error` | Unexpected error |
 | 502 | `all_providers_failed` | Every provider/key failed; has `retry_after` and `attempts` |
-| 503 | `no_providers` / `no_credentials` / `no_eligible_providers` | Nothing configured / usable (pool key: "Your key pool is empty") |
 | 400 | `kit_model_not_allowed` | Hackathon kit: model not on the allowed list |
 | 403 | `kit_revoked` / `kit_expired` | Hackathon kit revoked or ended |
 | 403 | `plan_limit_reached` / `plan_required` | Pool key limit reached / kits need Team |
@@ -214,7 +245,7 @@ Provider keys can have a token quota (reset every 30 days). Google per-model quo
 
 ## Admin API
 
-`/admin/*` accepts **either** the gateway `ADMIN_API_KEY` **or** a Clerk session token of a user on `ADMIN_EMAILS` / `ADMIN_USER_IDS` (`Authorization: Bearer …`). Other Clerk users get `403`. Project keys don't work. Results are wrapped in `data`.
+Admin only (regular users never need it). `/admin/*` accepts **either** the gateway `ADMIN_API_KEY` **or** a Clerk session token of a user on `ADMIN_EMAILS` / `ADMIN_USER_IDS` (`Authorization: Bearer …`). Other Clerk users get `403`. Project keys don't work. Results are wrapped in `data`.
 
 | Endpoint | Description |
 |---|---|

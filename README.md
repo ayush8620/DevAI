@@ -1,8 +1,21 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="packages/dashboard/public/brand/devai-logo-dark.svg">
+    <img alt="DevAI" src="packages/dashboard/public/brand/devai-logo-light.svg" height="64">
+  </picture>
+</p>
+
 # DevAI Gateway
 
 **Live:** [devai-dashboard-six.vercel.app](https://devai-dashboard-six.vercel.app) · **Docs:** [API reference](https://devai-dashboard-six.vercel.app/docs) · **Pricing:** [plans](https://devai-dashboard-six.vercel.app/pricing) · **API:** `https://devai-gateway.onrender.com/v1/chat/completions` · [Health](https://devai-gateway.onrender.com/v1/health)
 
-A production-ready internal API gateway that provides your applications with **one unified AI API endpoint** while managing multiple authorized API credentials/providers, quotas, caching, retries, health checks, and usage tracking.
+A production-ready API gateway that gives your applications **one unified, OpenAI-compatible AI endpoint** with failover, key rotation, quotas, caching, retries, health checks and usage tracking.
+
+**Bring your own key (BYOK):** DevAI has no provider keys of its own. Every user adds their own OpenAI, Anthropic, Gemini, Groq, OpenRouter or Mistral keys, and their requests run **only** on those keys. No provider is hard-coded or preferred; a user with no key gets a clear `400 no_provider_keys` error, never someone else's quota.
+
+## Brand assets
+
+Hand-written SVGs in `packages/dashboard/public/brand/`: `devai-mark.svg` (one node routed to three), `devai-logo-light.svg` / `devai-logo-dark.svg` (mark + wordmark for light / dark backgrounds) and `devai-og.svg`. The favicon is `packages/dashboard/src/app/icon.svg`. Regenerate the PNGs (32 px favicon, 180 px Apple touch icon, 1200×630 Open Graph image) with `node scripts/brand-assets.mjs`.
 
 ## Architecture
 
@@ -26,8 +39,9 @@ Applications
              │
       ┌──────┼───────────┐
       ▼      ▼           ▼
-   OpenAI  Anthropic  Google
-             Groq
+   OpenAI  Anthropic  Gemini
+   Groq  OpenRouter  Mistral
+   (the user's own keys)
 ```
 
 ## Quick Start
@@ -90,25 +104,25 @@ npm test               # gateway unit + integration tests (integration needs DB/
 npm run lint           # type-check both packages
 
 # End-to-end smoke test against a running gateway (creates and cleans up test data)
-ADMIN_API_KEY=... PROVIDER_API_KEY=your_gemini_key npm run test:e2e
-# Optional: PROVIDER_TYPE=groq MODEL=llama-3.1-8b-instant GATEWAY_URL=http://localhost:3001
+ADMIN_API_KEY=... PROVIDER_TYPE=groq PROVIDER_API_KEY=your_provider_key MODEL=llama-3.1-8b-instant npm run test:e2e
+# PROVIDER_TYPE and MODEL are required (no provider is assumed). Optional: GATEWAY_URL=http://localhost:3001
 ```
 
 ## Usage
 
-### 1. Create a Project
+### For users: bring your own key
 
-Open the dashboard at `http://localhost:3000/dashboard`, go to **Projects**, and create a new project.
+1. Sign in to the dashboard and open **Your keys** (`/dashboard/pool`). A new account sees **Add your first provider key**.
+2. Add one or more keys from OpenAI, Anthropic, Google Gemini, Groq, OpenRouter or Mistral (free tiers work). They are encrypted and used only for your requests.
+3. Create your DevAI API key (`dvai_…`) on the same page and call the gateway with it (below). Requests route only over your keys.
 
-### 2. Generate an API Key
+Without a provider key the gateway answers `400 no_provider_keys: add your own provider key in the dashboard`. Use **Check all keys** / the per-key **Test** button (or `POST /user/pool/health`) to see if your keys work; no tokens are spent.
 
-In the project details, click **Generate API Key**. Copy the key — it's only shown once.
+### For the gateway admin (shared providers, optional)
 
-### 3. Add a Provider
+The admin can still create **Projects** and **Shared providers** (`/dashboard/providers`) for the admin's own apps. A project key created there routes over the shared providers. Shared providers never serve other users' requests, and user keys never serve admin projects.
 
-Go to **Providers**, add a provider (OpenAI, Anthropic, Google, or Groq), then add your API credentials. You can add several keys to one provider (see [Multiple keys per provider](#multiple-keys-per-provider)).
-
-### 4. Make Requests
+### Make requests
 
 ```bash
 curl http://localhost:3001/v1/chat/completions \
@@ -152,13 +166,13 @@ curl -X PATCH http://localhost:3001/admin/projects/<projectId> \
   -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
   -d '{"routing": {
         "mode": "single",
-        "providers": ["my-groq:llama-3.1-8b-instant", {"provider": "my-gemini", "model": "gemini-2.5-flash"}],
-        "judge": "my-gemini:gemini-2.5-flash-lite",
+        "providers": ["my-groq:llama-3.1-8b-instant", {"provider": "my-openai", "model": "gpt-4o-mini"}],
+        "judge": "my-openai:gpt-4o-mini",
         "timeoutMs": 30000
       }}'
 ```
 
-`providers` is the priority order (for `single`) or the participants (for `fastest`/`best`). Each entry is a provider id, name or type, optionally followed by `:model`. If you leave it out, every active provider that supports the requested model is used, ordered by the provider's `config.priority` (higher first) and then by recent latency. The `judge` defaults to the first provider in the list.
+`providers` is the priority order (for `single`) or the participants (for `fastest`/`best`). Each entry is a provider id, name or type, optionally followed by `:model`. If you leave it out, every active provider of the key's owner that supports the requested model is used, ordered by the provider's `config.priority` (higher first) and then by recent latency. The `judge` defaults to the first provider in the list.
 
 ### Per-request override
 
@@ -168,7 +182,7 @@ Use the `x-devai-mode: fastest` header, or add a `devai` field to the body. The 
 {
   "model": "auto",
   "messages": [{"role": "user", "content": "Explain binary search"}],
-  "devai": { "mode": "best", "providers": ["gem-flash:gemini-2.5-flash", "gem-lite:gemini-2.5-flash-lite"], "timeoutMs": 20000 }
+  "devai": { "mode": "best", "providers": ["openai:gpt-4o-mini", "groq:llama-3.1-8b-instant"], "timeoutMs": 20000 }
 }
 ```
 
@@ -179,7 +193,7 @@ Response headers:
 - `x-devai-mode`
 - `x-devai-provider` (`<provider name>/<model>`)
 - `x-devai-fallbacks`: the number of providers that failed before the answer.
-- `x-devai-key`: the name and masked key that answered, e.g. `Gemini key (AIza...DyMg)`. Only the prefix and the last 4 characters are shown.
+- `x-devai-key`: the name and masked key that answered, e.g. `Groq key (gsk_...DyMg)`. Only the prefix and the last 4 characters are shown.
 - `x-devai-key-fallbacks`: the number of keys of the answering provider that failed first.
 - `x-cache`: `HIT` or `MISS`.
 
@@ -187,12 +201,12 @@ Response headers:
 
 ```json
 "devai": {
-  "mode": "best", "provider": "gem-flash", "model": "gemini-2.5-flash", "fallbacks": 0, "key": "Gemini key (AIza…DyMg)", "key_fallbacks": 0, "latency_ms": 3900,
+  "mode": "best", "provider": "OpenAI", "model": "gpt-4o-mini", "fallbacks": 0, "key": "OpenAI key (sk-p…DyMg)", "key_fallbacks": 0, "latency_ms": 3900,
   "candidates": [
-    {"provider": "gem-lite", "model": "gemini-2.5-flash-lite", "status": "success", "latency_ms": 397, "usage": {"total_tokens": 63}},
-    {"provider": "gem-flash", "model": "gemini-2.5-flash", "status": "success", "latency_ms": 3374, "selected": true, "usage": {"total_tokens": 631}}
+    {"provider": "Groq", "model": "llama-3.1-8b-instant", "status": "success", "latency_ms": 397, "usage": {"total_tokens": 63}},
+    {"provider": "OpenAI", "model": "gpt-4o-mini", "status": "success", "latency_ms": 3374, "selected": true, "usage": {"total_tokens": 631}}
   ],
-  "judge": {"method": "judge", "provider": "gem-flash", "model": "gemini-2.5-flash", "reason": "Candidate 2 is more complete."}
+  "judge": {"method": "judge", "provider": "OpenAI", "model": "gpt-4o-mini", "reason": "Candidate 2 is more complete."}
 }
 ```
 
@@ -372,15 +386,21 @@ Environment variables (Vercel → dashboard project; nothing is needed on the ga
 
 Without these keys (or without Clerk) the upgrade buttons show **Payments coming soon** and nothing calls Razorpay.
 
-## Free-key pooling
+## Bring your own key (BYOK)
 
-Signed-in users can add their own provider keys (Gemini, Groq, OpenRouter, OpenAI) to a **personal pool** at `/dashboard/pool`:
+Every signed-in user adds their own provider keys (OpenAI, Anthropic, Gemini, Groq, OpenRouter, Mistral) at `/dashboard/pool` (**Your keys**):
+
+- Requests with the user's `dvai_` key route **only** over that user's keys. With no (enabled) key the gateway returns `400 no_provider_keys`; with no key that serves the requested model, `400 no_provider_for_model`. There is no fallback to the admin's or anyone else's keys.
+- The Overview page shows the onboarding steps (add a provider key → create a DevAI key → call the gateway) until both are done, then a health summary of the user's keys.
+- **Per-user key health:** `POST /user/pool/health` (all keys) and `POST /user/pool/keys/:id/test` (one key) make a cheap authenticated call (list models; OpenRouter: `/key`), no tokens spent. A key that fails is skipped by routing for 5 minutes.
+- `/v1/models` lists only the models of the caller's own providers.
 
 - Keys are encrypted with `MASTER_ENCRYPTION_KEY` (AES-256-GCM) and only ever shown as prefix + last 4.
 - A pool API key (`dvai_…`) routes over **only that user's keys**, using the usual key strategies (`round_robin`, `least_used`, `failover`, `random`). A key that returns 429 cools down (30s, or the provider's retry hint) and the next key answers, so the user doesn't see the error.
 - The page shows per-key health (healthy / cooling down / quota used / error / disabled) and "quota stretched" stats: answers served divided by what the busiest single key served, plus the number of rate limits absorbed.
 - Plan limits are enforced by the gateway: Free **2** keys, Student **10**, Pro and Team **unlimited** (from `packages/gateway/src/billing/plans.ts`, kept in sync with the dashboard plan config by a unit test).
-- Pooled keys are never used for shared or admin traffic, the background health check skips them (so it doesn't spend free quota), and pool traffic is not cached.
+- User keys are never used for shared or admin traffic, the background health check skips them (so it doesn't spend free quota), and their traffic is not cached.
+- The public `/v1/health` needs no provider: it reports gateway, database and Redis; provider keys never change its status.
 
 ## Hackathon kits (Team plan)
 
@@ -390,7 +410,7 @@ At `/dashboard/kits`, Team users create a **kit**: temporary team API keys with:
 - an end date and time (up to 30 days),
 - an optional max team size (up to 50 keys) and an allowed-model list.
 
-The keys are shown once. Kit traffic uses the owner's key pool. Each kit has a public share page, `/kit/<shareToken>`, that shows the quota left and the deadline, but no keys. The owner can revoke a kit at any time. The gateway returns clear errors: `kit_revoked` / `kit_expired` (403), `kit_model_not_allowed` (400), and `kit_request_cap_reached` / `kit_token_cap_reached` (429). See [/docs#kits](https://devai-dashboard-six.vercel.app/docs#kits).
+The keys are shown once. Kit traffic uses the owner's own provider keys. Each kit has a public share page, `/kit/<shareToken>`, that shows the quota left and the deadline, but no keys. The owner can revoke a kit at any time. The gateway returns clear errors: `kit_revoked` / `kit_expired` (403), `kit_model_not_allowed` (400), and `kit_request_cap_reached` / `kit_token_cap_reached` (429). See [/docs#kits](https://devai-dashboard-six.vercel.app/docs#kits).
 
 ### Database migration (pool + kits)
 
@@ -403,6 +423,16 @@ psql "$DATABASE_URL" -f packages/gateway/drizzle/0001_key_pool_and_hackathon_kit
 
 The SQL is idempotent (`IF NOT EXISTS`), so it is safe to run twice. No new environment variables are needed. The gateway uses the existing `CLERK_SECRET_KEY` (to read the user's plan) and `MASTER_ENCRYPTION_KEY`.
 
+### Database migration (BYOK)
+
+BYOK needs no new tables or columns. `packages/gateway/drizzle/0002_byok.sql` only adds one index for the per-request "this user's active providers" lookup. It is optional, idempotent (`IF NOT EXISTS`), changes no data and is safe on Neon:
+
+```bash
+psql "$DATABASE_URL" -f packages/gateway/drizzle/0002_byok.sql
+```
+
+Existing shared (admin) providers and keys (`owner_user_id IS NULL`) keep working for the admin's own projects and are not changed.
+
 ## API Endpoints
 
 Full reference with curl, JavaScript and Python examples: **[devai-dashboard-six.vercel.app/docs](https://devai-dashboard-six.vercel.app/docs)** (Markdown copy in the repo: [docs/API.md](docs/API.md)).
@@ -411,15 +441,15 @@ Full reference with curl, JavaScript and Python examples: **[devai-dashboard-six
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/health` | Gateway health status |
+| `GET` | `/v1/health` | Gateway, database and Redis health (no provider needed) |
 | `GET` | `/public/kits/:shareToken` | Hackathon kit status: quota left and expiry |
 
-### Authenticated (Project API Key)
+### Authenticated (DevAI `dvai_` key)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1/chat/completions` | Chat completion (OpenAI-compatible) |
-| `GET` | `/v1/models` | List available models |
+| `POST` | `/v1/chat/completions` | Chat completion (OpenAI-compatible) on the key owner's provider keys |
+| `GET` | `/v1/models` | Models of the key owner's providers |
 | `GET` | `/v1/usage` | Project usage statistics |
 
 ### Admin (Admin API Key or allowlisted Clerk session)
@@ -443,11 +473,13 @@ Full reference with curl, JavaScript and Python examples: **[devai-dashboard-six
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/user/pool` | Your pooled keys, health and stretch stats |
-| `POST` | `/user/pool/keys` | Add a key to your pool (`{ provider, apiKey, name?, defaultModel? }`) |
-| `PATCH/DELETE` | `/user/pool/keys/:id` | Enable/disable/rename or remove a pooled key |
-| `PUT` | `/user/pool/strategy` | Set the pool's key strategy |
-| `POST/DELETE` | `/user/pool/api-keys[/:id]` | Create / revoke your pool `dvai_` API keys |
+| `GET` | `/user/pool` | Your provider keys, health, onboarding step and stretch stats |
+| `POST` | `/user/pool/keys` | Add a provider key (`{ provider: openai\|anthropic\|gemini\|groq\|openrouter\|mistral, apiKey, name?, defaultModel? }`) |
+| `PATCH/DELETE` | `/user/pool/keys/:id` | Enable/disable/rename or remove a key |
+| `POST` | `/user/pool/health` | Test all your keys (no tokens) |
+| `POST` | `/user/pool/keys/:id/test` | Test one key |
+| `PUT` | `/user/pool/strategy` | Set your key rotation strategy |
+| `POST/DELETE` | `/user/pool/api-keys[/:id]` | Create / revoke your `dvai_` API keys |
 | `GET/POST` | `/user/kits` | List / create hackathon kits (create needs Team) |
 | `POST` | `/user/kits/:id/revoke` | Revoke a kit |
 | `GET` | `/public/kits/:shareToken` | Public kit status (no auth, no keys) |
@@ -460,10 +492,13 @@ Full reference with curl, JavaScript and Python examples: **[devai-dashboard-six
 | Anthropic | `anthropic` | Claude 4, Claude 3.5 |
 | Google | `google` | Gemini 2.5 Flash/Pro, Gemma (free tier key from Google AI Studio) |
 | Groq | `groq` | LLaMA, Mixtral (fast inference) |
+| OpenRouter | `openai` + base URL | Any OpenRouter model id (user keys: provider `openrouter`) |
+| Mistral | `openai` + base URL | Mistral models (user keys: provider `mistral`) |
 | Ollama Cloud | `ollama` | Remote/Cloud Ollama API (Llama 3, DeepSeek, Mistral) |
 
 ## Features
 
+- **Bring your own key** — every user's requests run only on their own provider keys; nothing is hard-coded
 - **Unified API** — OpenAI-compatible endpoint for all providers
 - **Smart Routing** — Automatically selects the best provider based on health, quota, and latency
 - **Automatic Failover** — Retries on the next provider in priority order, with a circuit breaker for providers that are down

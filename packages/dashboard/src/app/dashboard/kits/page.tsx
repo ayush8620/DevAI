@@ -64,7 +64,7 @@ export default function KitsPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Team plan</p>
         <h1 className="mt-2">Hackathon kits</h1>
-        <p className="text-muted-foreground mt-1 max-w-2xl">Hand a team temporary API keys with a hard request or token cap, an end date and an allowed-model list. Traffic runs on your key pool, and the gateway cuts it off at the cap or the deadline.</p>
+        <p className="text-muted-foreground mt-1 max-w-2xl">Hand a team temporary API keys with a hard request or token cap, an end date and an allowed-model list. Traffic runs on your own provider keys, and the gateway cuts it off at the cap or the deadline.</p>
       </div>
 
       {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-400"><AlertTriangle className="h-4 w-4 mt-0.5" />{error}</div>}
@@ -124,13 +124,13 @@ export default function KitsPage() {
             </label>
           </div>
           <label className="block text-xs font-medium text-muted-foreground">Allowed models (comma-separated, empty = any)
-            <input value={form.allowedModels} onChange={e => setForm({ ...form, allowedModels: e.target.value })} className={`${input} font-mono text-xs`} placeholder="gemini-2.5-flash, llama-3.1-8b-instant" />
+            <input value={form.allowedModels} onChange={e => setForm({ ...form, allowedModels: e.target.value })} className={`${input} font-mono text-xs`} placeholder="e.g. gpt-4o-mini, llama-3.1-8b-instant" />
           </label>
           {formError && <p role="alert" className="text-xs text-red-400">{formError}</p>}
           <button type="submit" disabled={busy || !canCreate} className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-50">
             {!canCreate ? 'Team plan required' : busy ? 'Creating…' : 'Create kit'}
           </button>
-          <p className="text-[11px] text-muted-foreground">Requests use the keys in your <Link href="/dashboard/pool" className="text-primary hover:underline">key pool</Link>. A kit can last up to 30 days.</p>
+          <p className="text-[11px] text-muted-foreground">Requests use <Link href="/dashboard/pool" className="text-primary hover:underline">your own provider keys</Link>. A kit can last up to 30 days.</p>
         </form>
 
         <div className="space-y-4">

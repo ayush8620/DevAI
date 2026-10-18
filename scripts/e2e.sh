@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # End-to-end smoke test against a running gateway.
 # Usage:
-#   ADMIN_API_KEY=... PROVIDER_API_KEY=... [PROVIDER_TYPE=google] [MODEL=gemini-2.5-flash] \
+#   ADMIN_API_KEY=... PROVIDER_TYPE=openai|anthropic|google|groq|ollama PROVIDER_API_KEY=... MODEL=<a model of that provider> \
 #   [GATEWAY_URL=http://localhost:3001] ./scripts/e2e.sh
 # Creates a test project, API key, provider and credential, then exercises every endpoint.
 set -euo pipefail
 
 URL="${GATEWAY_URL:-http://localhost:3001}"
-TYPE="${PROVIDER_TYPE:-google}"
-MODEL="${MODEL:-gemini-2.5-flash}"
+# Bring your own key: no provider or model is assumed.
+: "${PROVIDER_TYPE:?set PROVIDER_TYPE (openai, anthropic, google, groq or ollama)}"
+: "${MODEL:?set MODEL (a model your PROVIDER_API_KEY can use, e.g. gpt-4o-mini or llama-3.1-8b-instant)}"
+TYPE="$PROVIDER_TYPE"
 : "${ADMIN_API_KEY:?set ADMIN_API_KEY}"
 : "${PROVIDER_API_KEY:?set PROVIDER_API_KEY}"
 ADMIN=(-H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json")

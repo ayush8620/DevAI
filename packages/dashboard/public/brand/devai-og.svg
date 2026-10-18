@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="glow" cx="0.5" cy="0" r="0.75"><stop offset="0" stop-color="#2563EB" stop-opacity="0.45"/><stop offset="1" stop-color="#020617" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#1E293B" stroke-width="1"/></pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#020617" stop-opacity="0"/><stop offset="1" stop-color="#020617"/></linearGradient>
+    <linearGradient id="ogt" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3B82F6"/><stop offset="1" stop-color="#22D3EE"/></linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#020617"/>
+  <rect width="1200" height="630" fill="url(#grid)" opacity="0.6"/>
+  <rect width="1200" height="630" fill="url(#fade)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <g transform="translate(96 96) scale(1.75)">
+  
+  <defs><linearGradient id="ogm" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2563EB"/><stop offset="0.55" stop-color="#3B82F6"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>
+  <rect width="64" height="64" rx="16" fill="url(#ogm)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 32H27"/><path d="M27 32C35 32 35 19 43 19"/><path d="M27 32H43"/><path d="M27 32C35 32 35 45 43 45"/></g><circle cx="17" cy="32" r="6" fill="#FFFFFF"/><g fill="#FFFFFF"><circle cx="46" cy="19" r="4.25"/><circle cx="46" cy="32" r="4.25"/><circle cx="46" cy="45" r="4.25"/></g>
+</g>
+  <text x="236" y="184" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="88" font-weight="700" letter-spacing="-2.6399999999999997"><tspan fill="#F8FAFC">Dev</tspan><tspan fill="url(#ogt)">AI</tspan></text>
+  <text x="96" y="318" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="54" font-weight="700" fill="#F8FAFC" letter-spacing="-1.5">One OpenAI-compatible endpoint.</text>
+  <text x="96" y="384" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="54" font-weight="700" fill="url(#ogt)" letter-spacing="-1.5">Your own keys.</text>
+  <g transform="translate(96 452)"><rect width="109" height="44" rx="22" fill="#0F172A" stroke="#1E293B"/><text x="54.5" y="29" text-anchor="middle" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">OpenAI</text></g><g transform="translate(217 452)"><rect width="149.5" height="44" rx="22" fill="#0F172A" stroke="#1E293B"/><text x="74.75" y="29" text-anchor="middle" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">Anthropic</text></g><g transform="translate(378.5 452)"><rect width="109" height="44" rx="22" fill="#0F172A" stroke="#1E293B"/><text x="54.5" y="29" text-anchor="middle" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">Gemini</text></g><g transform="translate(499.5 452)"><rect width="82" height="44" rx="22" fill="#0F172A" stroke="#1E293B"/><text x="41" y="29" text-anchor="middle" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">Groq</text></g><g transform="translate(593.5 452)"><rect width="163" height="44" rx="22" fill="#0F172A" stroke="#1E293B"/><text x="81.5" y="29" text-anchor="middle" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">OpenRouter</text></g><g transform="translate(768.5 452)"><rect width="122.5" height="44" rx="22" fill="#0F172A" stroke="#1E293B"/><text x="61.25" y="29" text-anchor="middle" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">Mistral</text></g>
+  <text x="96" y="566" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" fill="#94A3B8">Failover · key rotation · streaming · usage analytics</text>
+  <text x="1104" y="566" text-anchor="end" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#60A5FA">devai-dashboard-six.vercel.app</text>
+</svg>

@@ -7,9 +7,30 @@ import { clerkAppearance, clerkEnabled, SIGN_IN_URL, SIGN_UP_URL } from '@/lib/c
 
 const inter = Inter({ subsets: ['latin'] });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://devai-dashboard-six.vercel.app';
+const TITLE = 'DevAI — one OpenAI-compatible endpoint, your own keys';
+const DESCRIPTION = 'DevAI Gateway: one OpenAI-compatible API that runs on your own provider keys (OpenAI, Anthropic, Gemini, Groq, OpenRouter, Mistral), with failover, key rotation, parallel routing, caching and usage analytics.';
+
+// Icons and social images come from the file conventions in this folder: icon.svg + icon1.png
+// (favicons), apple-icon.png (180 px), opengraph-image.png / twitter-image.png (1200 x 630).
+// Sources: public/brand/*.svg, regenerated with `node scripts/brand-assets.mjs`.
 export const metadata: Metadata = {
-  title: 'DevAI — one OpenAI-compatible endpoint for many AI providers',
-  description: 'DevAI Gateway: one OpenAI-compatible API in front of Gemini, OpenAI, Anthropic, Groq and Ollama, with failover, parallel routing, caching, rate limits and usage analytics.',
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  applicationName: 'DevAI',
+  openGraph: {
+    type: 'website',
+    siteName: 'DevAI',
+    url: '/',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 export default function RootLayout({

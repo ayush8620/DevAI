@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, Github } from 'lucide-react';
 import { clerkEnabled, SIGN_IN_URL } from '@/lib/clerk';
+import { Logo, LogoMark } from '@/components/brand/logo';
 
 export const GITHUB = 'https://github.com/ayush8620/DevAI';
 
@@ -16,9 +17,8 @@ export function SiteHeader({ active, badge, wide }: { active?: '/docs' | '/prici
     <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
       <div className={`mx-auto flex h-16 items-center justify-between px-5 sm:px-8 ${wide ? 'max-w-7xl' : 'max-w-6xl'}`}>
         <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground text-sm">D</span>
-            <span className="text-lg">DevAI</span>
+          <Link href="/" aria-label="DevAI home" className="flex items-center">
+            <Logo />
           </Link>
           {badge}
         </div>
@@ -54,7 +54,7 @@ export function SiteFooter({ wide }: { wide?: boolean }) {
   return (
     <footer className="border-t px-5 sm:px-8 py-8">
       <div className={`mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground ${wide ? 'max-w-7xl' : 'max-w-6xl'}`}>
-        <p>DevAI Gateway · Built by <a href="https://ayushyadav.dev" target="_blank" rel="noreferrer" className="font-medium text-foreground hover:text-primary">Ayush Yadav</a></p>
+        <p className="inline-flex flex-wrap items-center justify-center gap-2"><Link href="/" aria-label="DevAI home" className="inline-flex"><LogoMark className="h-6 w-6" /></Link> DevAI Gateway · Built by <a href="https://ayushyadav.dev" target="_blank" rel="noreferrer" className="font-medium text-foreground hover:text-primary">Ayush Yadav</a></p>
         <div className="flex flex-wrap items-center justify-center gap-5">
           <Link href="/dashboard" className="hover:text-foreground">Dashboard</Link>
           <Link href="/docs" className="hover:text-foreground">Docs</Link>

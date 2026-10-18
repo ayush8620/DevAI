@@ -9,13 +9,16 @@ import { useTheme } from 'next-themes';
 import { UserButton } from '@clerk/nextjs';
 import { cn } from '@/lib/utils';
 import { clerkEnabled } from '@/lib/clerk';
+import { Logo as BrandLogo } from '@/components/brand/logo';
 
 export const DASHBOARD_ROUTES = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/providers', label: 'Providers', icon: Server },
+  // Bring your own key: every user's requests run only on the keys they add here.
+  { href: '/dashboard/pool', label: 'Your keys', icon: Layers },
+  // Admin-only: shared providers serve the admin's own projects, never other users.
+  { href: '/dashboard/providers', label: 'Shared providers', icon: Server },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { href: '/dashboard/usage', label: 'Usage', icon: BarChart3 },
-  { href: '/dashboard/pool', label: 'Key pool', icon: Layers },
   { href: '/dashboard/kits', label: 'Hackathon kits', icon: Trophy },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
@@ -29,9 +32,8 @@ const RESOURCES = [
 
 function Logo() {
   return (
-    <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground text-sm shadow-lg shadow-primary/20">D</span>
-      <span className="text-lg">DevAI</span>
+    <Link href="/" aria-label="DevAI home" className="flex items-center gap-2">
+      <BrandLogo markClassName="drop-shadow-[0_4px_12px_rgba(59,130,246,0.35)]" />
       <span className="rounded-full border bg-card/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Console</span>
     </Link>
   );

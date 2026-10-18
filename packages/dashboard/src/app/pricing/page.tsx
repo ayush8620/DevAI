@@ -19,7 +19,7 @@ const compare: { label: string; values: (string | boolean)[] }[] = [
   { label: 'Requests per day', values: PLANS.map(p => p.limits.requestsPerDay.toLocaleString('en-IN')) },
   { label: 'Projects', values: PLANS.map(p => String(p.limits.projects)) },
   { label: 'Provider API keys', values: PLANS.map(p => String(p.limits.providerKeys)) },
-  { label: 'Personal free-key pool', values: PLANS.map(p => p.limits.pooledKeys === null ? 'Unlimited' : `${p.limits.pooledKeys} keys`) },
+  { label: 'Your own provider keys (BYOK)', values: PLANS.map(p => p.limits.pooledKeys === null ? 'Unlimited' : `${p.limits.pooledKeys} keys`) },
   { label: 'Hackathon kits (capped, expiring team keys)', values: PLANS.map(p => p.limits.kits) },
   { label: 'OpenAI-compatible API + streaming', values: [true, true, true, true] },
   { label: 'Automatic key & provider failover', values: [true, true, true, true] },
@@ -36,7 +36,8 @@ const faqs = [
   ['How do I pay?', 'Checkout runs on Razorpay: UPI, debit and credit cards, netbanking and wallets. You need to be signed in so the plan is added to your account.'],
   ['Is it a subscription?', `No auto-debit. One payment gives ${BILLING_PERIOD_DAYS} days of the plan; paying again before it ends adds another ${BILLING_PERIOD_DAYS} days.`],
   ['Who can use the Student plan?', 'Anyone with a verified college email on their account, such as an address ending in .edu or .ac.in. Add it under your account settings before upgrading.'],
-  ['Do I still pay the AI providers?', 'Yes. DevAI routes requests with your own provider API keys, so provider usage is billed by each provider under your account. Free provider tiers such as Gemini’s work too.'],
+  ['Do I still pay the AI providers?', 'Yes. DevAI is bring-your-own-key: every request runs on provider API keys you add yourself, so provider usage is billed by each provider under your own account. Free tiers (Gemini, Groq, OpenRouter :free models) work too. DevAI never lends you shared keys.'],
+  ['Which providers can I use?', 'Any you have a key for: OpenAI, Anthropic, Google Gemini, Groq, OpenRouter and Mistral. Add as many keys as your plan allows; DevAI rotates and fails over between them.'],
 ];
 
 export default function PricingPage() {

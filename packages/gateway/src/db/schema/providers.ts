@@ -14,4 +14,6 @@ export const providers = pgTable('providers', {
 }, (table) => ({
   typeIdx: index('providers_type_idx').on(table.type),
   ownerIdx: index('providers_owner_user_id_idx').on(table.ownerUserId),
+  // BYOK: per-request lookup of one owner's active providers (drizzle/0002_byok.sql)
+  ownerStatusIdx: index('providers_owner_status_idx').on(table.ownerUserId, table.status),
 }));
