@@ -1,5 +1,7 @@
 # DevAI Gateway
 
+**Live:** [devai-dashboard-six.vercel.app](https://devai-dashboard-six.vercel.app) · **API:** `https://devai-gateway.onrender.com/v1/chat/completions` · [Health](https://devai-gateway.onrender.com/v1/health)
+
 A production-ready internal API gateway that provides your applications with **one unified AI API endpoint** while managing multiple authorized API credentials/providers, quotas, caching, retries, health checks, and usage tracking.
 
 ## Architecture
