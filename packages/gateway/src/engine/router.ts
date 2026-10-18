@@ -3,7 +3,7 @@ import { createProvider } from '../providers/registry.js';
 import { db } from '../db/index.js';
 import { providers, providerCredentials, models } from '../db/schema/index.js';
 import { decrypt } from '../crypto/encryption.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { scoreCandidates } from './scorer.js';
 import { checkQuota } from './quota.js';
 import { cacheGet, cacheSet } from '../cache/redis.js';
@@ -55,8 +55,15 @@ function parseSpec(spec: TargetSpec): { provider: string; model?: string } {
 type ProviderRow = typeof providers.$inferSelect;
 type CredentialRow = typeof providerCredentials.$inferSelect;
 
-async function loadPool() {
-  const allProviders = await db.select().from(providers).where(eq(providers.status, 'active'));
+/**
+ * Providers a request may use: the shared, admin-managed ones, or, for a personal pool /
+ * hackathon kit project, only the providers (and keys) owned by that user.
+ */
+async function loadPool(ownerUserId?: string | null) {
+  const allProviders = await db.select().from(providers).where(and(
+    eq(providers.status, 'active'),
+    ownerUserId ? eq(providers.ownerUserId, ownerUserId) : isNull(providers.ownerUserId),
+  ));
   // Keys that failed a test ('error') stay in the pool: routing cools them down on
   // failure and they recover automatically. Only disabled/revoked keys are excluded.
   const allCredentials = (await db.select().from(providerCredentials)
@@ -127,9 +134,18 @@ async function toTargets(pairs: { p: ProviderRow; model: string }[], creds: Cred
   return out;
 }
 
-export async function buildTargets(request: ChatRequest, routing: ResolvedRouting) {
-  const { allProviders, allCredentials } = await loadPool();
-  if (!allProviders.length) throw new RoutingError('No providers configured', 'no_providers');
+/** Default model for "auto": a pooled OpenAI-compatible provider (e.g. OpenRouter) sets its own. */
+function autoModelFor(p: ProviderRow, requested: string): string {
+  if (requested !== 'auto') return requested;
+  const dm = (p.config as any)?.defaultModel;
+  return typeof dm === 'string' && dm ? dm : resolveModelForProvider(p.type, 'auto');
+}
+
+export async function buildTargets(request: ChatRequest, routing: ResolvedRouting, ownerUserId?: string | null) {
+  const { allProviders, allCredentials } = await loadPool(ownerUserId);
+  if (!allProviders.length) {
+    throw new RoutingError(ownerUserId ? 'Your key pool is empty: add a provider key in the dashboard (Key pool)' : 'No providers configured', 'no_providers');
+  }
   if (!allCredentials.length) throw new RoutingError('No active credentials available', 'no_credentials');
   const skipped: CandidateResult[] = [];
 
@@ -139,7 +155,7 @@ export async function buildTargets(request: ChatRequest, routing: ResolvedRoutin
     for (const spec of routing.providers) {
       const { provider, model } = parseSpec(spec);
       for (const p of matchProvider(allProviders, provider)) {
-        pairs.push({ p, model: model ?? (request.model !== 'auto' ? request.model : resolveModelForProvider(p.type, 'auto')) });
+        pairs.push({ p, model: model ?? autoModelFor(p, request.model) });
       }
     }
     if (!pairs.length) throw new RoutingError('None of the requested providers exist or are active', 'no_eligible_providers');
@@ -149,8 +165,10 @@ export async function buildTargets(request: ChatRequest, routing: ResolvedRoutin
   // Automatic: every provider that supports the model, ordered by configured priority then recent latency
   const pairs: { p: ProviderRow; model: string }[] = [];
   for (const p of allProviders) {
-    if (request.model !== 'auto' && !(await isModelSupported(p.type, request.model, p.id))) continue;
-    pairs.push({ p, model: resolveModelForProvider(p.type, request.model) });
+    // A pooled OpenAI-compatible endpoint (custom base URL, e.g. OpenRouter) accepts any model id.
+    const anyModel = Boolean(p.ownerUserId && p.baseUrl);
+    if (request.model !== 'auto' && !anyModel && !(await isModelSupported(p.type, request.model, p.id))) continue;
+    pairs.push({ p, model: autoModelFor(p, request.model) });
   }
   const targets = await toTargets(pairs, allCredentials, skipped, routing);
   // Order providers (configured priority, then best recent latency of any key); keys keep their strategy order.
@@ -246,6 +264,8 @@ export interface RouteOptions {
   projectRouting?: unknown;
   headerMode?: string | null;
   headerKeyStrategy?: string | null;
+  /** Route only over this user's pooled keys (personal pool / hackathon kit projects) */
+  poolOwnerUserId?: string | null;
 }
 
 /** Remember a key's last error so the dashboard can show it (best effort, non-blocking). */
@@ -258,7 +278,7 @@ function noteKeyFailure(t: RouteTarget, f: FailureClass, err: any) {
 
 async function prepare(request: ChatRequest, options: RouteOptions) {
   const routing = resolveRouting(request, options.projectRouting, options.headerMode, options.headerKeyStrategy);
-  let { targets, skipped } = await buildTargets(request, routing);
+  let { targets, skipped } = await buildTargets(request, routing, options.poolOwnerUserId);
   if (routing.mode !== 'single') {
     // Parallel modes fan out over providers (max 5); each keeps all its keys for failover.
     const keep = new Set(groupTargets(targets).slice(0, MAX_PARALLEL).map(g => g.key));
@@ -269,7 +289,7 @@ async function prepare(request: ChatRequest, options: RouteOptions) {
   if (routing.mode === 'best' && groupTargets(targets).length > 1) {
     let judgeTarget = targets[0];
     if (routing.judge) {
-      const { targets: jt } = await buildTargets({ ...request, model: 'auto' }, { ...routing, providers: [routing.judge] });
+      const { targets: jt } = await buildTargets({ ...request, model: 'auto' }, { ...routing, providers: [routing.judge] }, options.poolOwnerUserId);
       if (jt[0]) judgeTarget = jt[0];
     }
     judge = makeLlmJudge(judgeTarget, routing.timeoutMs);

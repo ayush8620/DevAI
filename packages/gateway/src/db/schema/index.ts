@@ -9,3 +9,4 @@ export * from './rate-limits';
 export * from './health-checks';
 export * from './audit-logs';
 export * from './cache-metadata';
+export * from './hackathon-kits';

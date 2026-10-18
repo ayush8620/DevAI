@@ -11,6 +11,7 @@ import { logger } from '../../middleware/logger.js';
 import { ChatRequestSchema, AppEnv } from '../../types/index.js';
 import { v4 as uuidv4 } from 'uuid';
 import { deduplicateRequest, generateCacheKey } from '../../engine/dedup.js';
+import { checkKitAccess, reserveKitRequest, releaseKitRequest, addKitTokens, type KitRow } from '../../engine/kit-limits.js';
 
 export const chatRoutes = new Hono<AppEnv>();
 
@@ -88,13 +89,30 @@ chatRoutes.post('/completions', async (c: Context<AppEnv>) => {
   const headerMode = c.req.header('x-devai-mode');
   const headerKeyStrategy = c.req.header('x-devai-key-strategy');
   const projectRouting = project?.routing;
+  // Personal pool and hackathon kit projects route only over their owner's pooled keys.
+  const poolOwnerUserId: string | null = project?.kind === 'pool' || project?.kind === 'kit' ? (project?.ownerUserId ?? null) : null;
 
-  // The response cache only applies to plain single-provider requests.
+  // Hackathon kit: expiry, revocation, allowed models and caps.
+  const kit = c.get('kit') as KitRow | undefined;
+  if (kit) {
+    const access = checkKitAccess(kit, request.model);
+    if (!access.ok) {
+      return c.json({ error: { type: access.type, message: access.message, request_id: requestId } }, access.status);
+    }
+    request.model = access.model;
+    const reserved = await reserveKitRequest(kit);
+    if (!reserved.ok) {
+      return c.json({ error: { type: reserved.type, message: reserved.message, request_id: requestId } }, reserved.status);
+    }
+  }
+
+  // The response cache only applies to plain single-provider requests on shared providers
+  // (pool and kit traffic is never served from, or written to, the shared cache).
   const effectiveMode = request.devai?.mode ?? headerMode ?? (projectRouting as any)?.mode ?? 'single';
-  const cacheable = effectiveMode === 'single' && !request.devai;
+  const cacheable = effectiveMode === 'single' && !request.devai && !poolOwnerUserId;
 
   if (request.stream) {
-    return handleStream(c, request, { requestId, projectId, startTime, cacheable, projectRouting, headerMode, headerKeyStrategy });
+    return handleStream(c, request, { requestId, projectId, startTime, cacheable, projectRouting, headerMode, headerKeyStrategy, poolOwnerUserId, kit });
   }
 
   try {
@@ -117,9 +135,13 @@ chatRoutes.post('/completions', async (c: Context<AppEnv>) => {
     // Identical concurrent requests share one routing run.
     const dedupKey = `${projectId}:${effectiveMode}:${JSON.stringify(request.devai ?? {})}:${generateCacheKey(request)}`;
     const dedupKey2 = `${dedupKey}:${headerKeyStrategy ?? ''}`;
-    const outcome = await deduplicateRequest(dedupKey2, () => routeRequest(request, projectId, { projectRouting, headerMode, headerKeyStrategy }));
+    const outcome = await deduplicateRequest(dedupKey2, () => routeRequest(request, projectId, { projectRouting, headerMode, headerKeyStrategy, poolOwnerUserId }));
 
     recordCandidates(requestId, projectId, outcome, outcome.decision);
+    if (kit) {
+      const spent = outcome.candidates.reduce((n, x) => n + (x.response?.usage?.total_tokens || 0), 0) + (outcome.decision?.judge?.response?.usage?.total_tokens || 0);
+      addKitTokens(kit, spent || outcome.response.usage?.total_tokens || 0).catch(() => {});
+    }
     if (cacheable) {
       setCachedResponse(request, outcome.response).catch(err => logger.error({ err: err.message }, 'Failed to cache response'));
     }
@@ -152,6 +174,8 @@ chatRoutes.post('/completions', async (c: Context<AppEnv>) => {
     logger.info({ requestId, projectId, mode: outcome.mode, provider: sel.providerName, model: sel.model, fallbacks: outcome.fallbacks }, 'Chat completion successful');
     return c.json({ ...outcome.response, devai: metadata });
   } catch (error: any) {
+    // Nothing reached a provider: give the reserved kit request back.
+    if (kit && error instanceof RoutingError) releaseKitRequest(kit).catch(() => {});
     return errorResponse(c, error, request, { requestId, projectId, startTime });
   }
 });
@@ -219,7 +243,7 @@ function estimateTokens(text: string) {
  */
 async function handleStream(
   c: Context<AppEnv>, request: ChatRequest,
-  o: Ctx & { cacheable: boolean; projectRouting: unknown; headerMode?: string; headerKeyStrategy?: string },
+  o: Ctx & { cacheable: boolean; projectRouting: unknown; headerMode?: string; headerKeyStrategy?: string; poolOwnerUserId?: string | null; kit?: KitRow },
 ) {
   const { requestId, projectId, startTime, cacheable } = o;
   const id = `chatcmpl-${requestId.replace(/^req_/, '').slice(0, 24) || Date.now()}`;
@@ -239,12 +263,14 @@ async function handleStream(
       if (cacheable) c.header('X-Cache', 'MISS');
       outcome = await routeStreamRequest(request, projectId, {
         projectRouting: o.projectRouting, headerMode: o.headerMode, headerKeyStrategy: o.headerKeyStrategy,
+        poolOwnerUserId: o.poolOwnerUserId,
       });
       open = outcome.stream;
       recordCandidates(requestId, projectId, outcome, outcome.decision, outcome.selected);
       setRoutingHeaders(c, outcome);
     }
   } catch (error: any) {
+    if (o.kit && error instanceof RoutingError) releaseKitRequest(o.kit).catch(() => {});
     return errorResponse(c, error, request, { requestId, projectId, startTime });
   }
 
@@ -316,6 +342,7 @@ async function handleStream(
       latencyMs, status, cacheHit: cachedHit, error: failed ?? (aborted ? 'client disconnected' : undefined),
     }).catch(err => logger.error({ err: err.message }, 'Failed to record stream usage'));
     if (sel && u.total_tokens) consumeQuota(sel.credentialId, u.total_tokens).catch(() => {});
+    if (o.kit && !cachedHit) addKitTokens(o.kit, u.total_tokens).catch(() => {});
 
     // Cache the assembled answer only when it finished normally
     if (cacheable && !cachedHit && !aborted && !failed && (finish ?? 'stop') === 'stop' && text.trim()) {

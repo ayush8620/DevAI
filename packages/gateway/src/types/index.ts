@@ -127,6 +127,10 @@ export type AppEnv = {
     project: any;
     /** Set on /admin routes: how the caller authenticated. */
     adminAuth?: { method: 'admin_key' } | { method: 'clerk'; userId: string; email?: string };
+    /** Set on /user routes: the signed-in Clerk user, their plan and limits. */
+    user?: { userId: string; plan: 'free' | 'student' | 'pro' | 'team'; isAdmin: boolean; limits: { pooledKeys: number | null; kits: boolean } };
+    /** Set on /v1 routes when the API key belongs to a hackathon kit. */
+    kit?: any;
   };
 };
 

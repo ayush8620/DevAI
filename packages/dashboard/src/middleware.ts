@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-// /dashboard requires a Clerk session. The landing page, /sign-in and /sign-up stay public.
+// /dashboard requires a Clerk session. The landing page, the API docs (/docs), /pricing,
+// /sign-in, /sign-up and the Razorpay webhook stay public. (/api/billing/order and /verify
+// check the session themselves and answer 401 instead of redirecting.)
 const isProtected = createRouteMatcher(['/dashboard(.*)']);
+const isPublic = createRouteMatcher(['/', '/docs(.*)', '/pricing(.*)', '/kit(.*)', '/sign-in(.*)', '/sign-up(.*)', '/api/billing/webhook(.*)']);
 
 // Without Clerk keys (local dev, self-hosting) the dashboard is open and the gateway
 // admin key from Settings protects the data, exactly as before.
@@ -11,7 +14,7 @@ const enabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process
 export default enabled
   ? clerkMiddleware(
       async (auth, req) => {
-        if (isProtected(req)) await auth.protect();
+        if (isProtected(req) && !isPublic(req)) await auth.protect();
       },
       {
         signInUrl: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || '/sign-in',

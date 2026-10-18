@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../../db/index.js';
 import { projects, apiKeys, usageRecords } from '../../db/schema/index.js';
-import { eq, count } from 'drizzle-orm';
+import { eq, count, isNull } from 'drizzle-orm';
 import { logAudit } from '../../services/audit.js';
 import { adminActor } from '../../auth/admin.js';
 import { logger } from '../../middleware/logger.js';
@@ -12,7 +12,8 @@ export const adminProjectRoutes = new Hono();
 // List all projects with stats
 adminProjectRoutes.get('/', async (c) => {
   try {
-    const allProjects = await db.select().from(projects);
+    // Admin projects only; users' pool and kit projects are managed on /user/*.
+    const allProjects = await db.select().from(projects).where(isNull(projects.ownerUserId));
 
     const enriched = await Promise.all(allProjects.map(async (p) => {
       const [keyCount] = await db.select({ count: count() })

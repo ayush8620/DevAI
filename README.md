@@ -1,6 +1,6 @@
 # DevAI Gateway
 
-**Live:** [devai-dashboard-six.vercel.app](https://devai-dashboard-six.vercel.app) · **API:** `https://devai-gateway.onrender.com/v1/chat/completions` · [Health](https://devai-gateway.onrender.com/v1/health)
+**Live:** [devai-dashboard-six.vercel.app](https://devai-dashboard-six.vercel.app) · **Docs:** [API reference](https://devai-dashboard-six.vercel.app/docs) · **Pricing:** [plans](https://devai-dashboard-six.vercel.app/pricing) · **API:** `https://devai-gateway.onrender.com/v1/chat/completions` · [Health](https://devai-gateway.onrender.com/v1/health)
 
 A production-ready internal API gateway that provides your applications with **one unified AI API endpoint** while managing multiple authorized API credentials/providers, quotas, caching, retries, health checks, and usage tracking.
 
@@ -86,7 +86,7 @@ npm run start -w packages/dashboard
 ### Tests
 
 ```bash
-npm test               # unit + integration tests (integration needs DB/Redis from .env)
+npm test               # gateway unit + integration tests (integration needs DB/Redis from .env) and dashboard billing tests
 npm run lint           # type-check both packages
 
 # End-to-end smoke test against a running gateway (creates and cleans up test data)
@@ -341,13 +341,78 @@ The Settings page shows whether the gateway accepts the current session. The adm
 
 No JWT template is needed: the default session token is used, and the email is looked up on the server. If you prefer, add `"email": "{{user.primary_email_address}}"` under Clerk → Sessions → Customize session token, and the gateway will read it from the token instead.
 
+## Pricing & payments (Razorpay)
+
+Plans live in one file, [`packages/dashboard/src/lib/billing/plans.ts`](packages/dashboard/src/lib/billing/plans.ts):
+
+| Plan | Price | Requests / day | Projects | Provider keys |
+|------|-------|----------------|----------|---------------|
+| Free | ₹0 | 100 | 1 | 2 |
+| Student | ₹99 / month (verified `.edu` / `.ac.in` email) | 2,000 | 3 | 5 |
+| Pro | ₹499 / month | 20,000 | 10 | 20 |
+| Team | ₹1,999 / month | 100,000 | 50 | 100 |
+
+The public page is [`/pricing`](https://devai-dashboard-six.vercel.app/pricing); signed-in users manage their plan at `/dashboard/billing`. One payment buys 30 days (no auto-debit); paying again early extends the plan. The plan is stored on the Clerk user (`publicMetadata.billing`). The limits are plan allowances. The gateway enforces the personal key-pool size and hackathon-kit access; the other limits are not enforced yet.
+
+How a payment works:
+
+1. `POST /api/billing/order` `{ planId }`: needs a Clerk session. The amount is taken from `plans.ts` on the server, never from the browser. The Student plan checks the account's verified emails.
+2. The browser opens Razorpay Checkout.js with the order id.
+3. `POST /api/billing/verify`: checks `HMAC_SHA256(order_id|payment_id, RAZORPAY_KEY_SECRET)`, reads the user and plan from the order's notes, and activates the plan.
+4. `POST /api/billing/webhook` (public): checks `x-razorpay-signature` = `HMAC_SHA256(raw body, RAZORPAY_WEBHOOK_SECRET)` and applies `order.paid` / `payment.captured` as a backup. Activation is idempotent.
+
+Environment variables (Vercel → dashboard project; nothing is needed on the gateway):
+
+| Variable | Value |
+|----------|-------|
+| `RAZORPAY_KEY_ID` | Key id from Razorpay → Account & Settings → API keys (`rzp_test_…` / `rzp_live_…`) |
+| `RAZORPAY_KEY_SECRET` | The matching key secret (server only) |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Same as `RAZORPAY_KEY_ID`, used by Checkout.js |
+| `RAZORPAY_WEBHOOK_SECRET` | Secret you set on the webhook (URL `https://<dashboard>/api/billing/webhook`, events `order.paid`, `payment.captured`) |
+
+Without these keys (or without Clerk) the upgrade buttons show **Payments coming soon** and nothing calls Razorpay.
+
+## Free-key pooling
+
+Signed-in users can add their own provider keys (Gemini, Groq, OpenRouter, OpenAI) to a **personal pool** at `/dashboard/pool`:
+
+- Keys are encrypted with `MASTER_ENCRYPTION_KEY` (AES-256-GCM) and only ever shown as prefix + last 4.
+- A pool API key (`dvai_…`) routes over **only that user's keys**, using the usual key strategies (`round_robin`, `least_used`, `failover`, `random`). A key that returns 429 cools down (30s, or the provider's retry hint) and the next key answers, so the user doesn't see the error.
+- The page shows per-key health (healthy / cooling down / quota used / error / disabled) and "quota stretched" stats: answers served divided by what the busiest single key served, plus the number of rate limits absorbed.
+- Plan limits are enforced by the gateway: Free **2** keys, Student **10**, Pro and Team **unlimited** (from `packages/gateway/src/billing/plans.ts`, kept in sync with the dashboard plan config by a unit test).
+- Pooled keys are never used for shared or admin traffic, the background health check skips them (so it doesn't spend free quota), and pool traffic is not cached.
+
+## Hackathon kits (Team plan)
+
+At `/dashboard/kits`, Team users create a **kit**: temporary team API keys with:
+
+- a request cap and/or token cap (Redis counters `kit:<id>:requests` and `kit:<id>:tokens`),
+- an end date and time (up to 30 days),
+- an optional max team size (up to 50 keys) and an allowed-model list.
+
+The keys are shown once. Kit traffic uses the owner's key pool. Each kit has a public share page, `/kit/<shareToken>`, that shows the quota left and the deadline, but no keys. The owner can revoke a kit at any time. The gateway returns clear errors: `kit_revoked` / `kit_expired` (403), `kit_model_not_allowed` (400), and `kit_request_cap_reached` / `kit_token_cap_reached` (429). See [/docs#kits](https://devai-dashboard-six.vercel.app/docs#kits).
+
+### Database migration (pool + kits)
+
+The pool and kits need new columns and a table. Run the migration on Neon **before** deploying the new gateway:
+
+```bash
+psql "$DATABASE_URL" -f packages/gateway/drizzle/0001_key_pool_and_hackathon_kits.sql
+# or: cd packages/gateway && npm run db:push
+```
+
+The SQL is idempotent (`IF NOT EXISTS`), so it is safe to run twice. No new environment variables are needed. The gateway uses the existing `CLERK_SECRET_KEY` (to read the user's plan) and `MASTER_ENCRYPTION_KEY`.
+
 ## API Endpoints
+
+Full reference with curl, JavaScript and Python examples: **[devai-dashboard-six.vercel.app/docs](https://devai-dashboard-six.vercel.app/docs)** (Markdown copy in the repo: [docs/API.md](docs/API.md)).
 
 ### Public
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/v1/health` | Gateway health status |
+| `GET` | `/public/kits/:shareToken` | Hackathon kit status: quota left and expiry |
 
 ### Authenticated (Project API Key)
 
@@ -373,6 +438,19 @@ No JWT template is needed: the default session token is used, and the email is l
 | `GET` | `/admin/analytics/*` | Usage analytics |
 | `GET` | `/admin/audit-logs` | Audit log viewer |
 | `GET` | `/admin/me` | Who is calling (Clerk user or admin key) |
+
+### Signed-in user (any Clerk session)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/user/pool` | Your pooled keys, health and stretch stats |
+| `POST` | `/user/pool/keys` | Add a key to your pool (`{ provider, apiKey, name?, defaultModel? }`) |
+| `PATCH/DELETE` | `/user/pool/keys/:id` | Enable/disable/rename or remove a pooled key |
+| `PUT` | `/user/pool/strategy` | Set the pool's key strategy |
+| `POST/DELETE` | `/user/pool/api-keys[/:id]` | Create / revoke your pool `dvai_` API keys |
+| `GET/POST` | `/user/kits` | List / create hackathon kits (create needs Team) |
+| `POST` | `/user/kits/:id/revoke` | Revoke a kit |
+| `GET` | `/public/kits/:shareToken` | Public kit status (no auth, no keys) |
 
 ## Supported Providers
 

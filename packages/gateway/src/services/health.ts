@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { providers, providerCredentials, healthChecks } from '../db/schema/index.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, isNull } from 'drizzle-orm';
 import { createProvider } from '../providers/registry.js';
 import { decrypt } from '../crypto/encryption.js';
 import { redis, cacheSet } from '../cache/redis.js';
@@ -77,7 +77,9 @@ export async function checkProviderHealth(providerId: string): Promise<HealthRes
 }
 
 export async function checkAllProviders(): Promise<HealthResult[]> {
-  const allProviders = await db.select().from(providers).where(eq(providers.status, 'active'));
+  // Shared providers only: users' pooled keys are not health-checked in the background
+  // (that would spend their free quota); routing cools them down on real failures instead.
+  const allProviders = await db.select().from(providers).where(and(eq(providers.status, 'active'), isNull(providers.ownerUserId)));
   return Promise.all(allProviders.map(async (p): Promise<HealthResult> => {
     try {
       return await checkProviderHealth(p.id);

@@ -325,8 +325,8 @@ export default function ProvidersPage() {
   };
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl">
-      <div className="flex items-center justify-between">
+    <div className="p-5 sm:p-8 space-y-8 max-w-7xl">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">AI Providers</h1>
           <p className="text-muted-foreground mt-1">Manage cloud AI providers, credentials, and supported models.</p>

@@ -94,19 +94,20 @@ async function emailsFor(userId: string, s: AdminAuthSettings, deps: AdminAuthDe
   return emails;
 }
 
-let warnedNoAllowlist = false;
 
-export async function authenticateAdmin(
+export type ClerkSessionResult =
+  | { ok: true; userId: string; payload: Record<string, unknown> }
+  | { ok: false; status: 401; message: string };
+
+/** Verify a Clerk session JWT (networkless with CLERK_JWT_KEY, else via the JWKS). */
+export async function verifyClerkSession(
   token: string,
   s: AdminAuthSettings = adminAuthSettingsFromEnv(),
   deps: AdminAuthDeps = {},
-): Promise<AdminAuthResult> {
-  if (safeEqual(token, s.adminApiKey)) return { ok: true, method: 'admin_key' };
-
+): Promise<ClerkSessionResult> {
   if (!looksLikeJwt(token) || !clerkEnabled(s)) {
-    return { ok: false, status: 401, message: 'Invalid Admin API key' };
+    return { ok: false, status: 401, message: 'Sign in required (missing or invalid session token)' };
   }
-
   const verify = deps.verify || verifyToken;
   let payload: Record<string, unknown>;
   try {
@@ -129,6 +130,42 @@ export async function authenticateAdmin(
 
   const userId = typeof payload.sub === 'string' ? payload.sub : '';
   if (!userId) return { ok: false, status: 401, message: 'Invalid session token' };
+
+  return { ok: true, userId, payload };
+}
+
+/** Verified email addresses of a Clerk user (cached for 10 minutes). */
+export async function userEmails(userId: string, s: AdminAuthSettings = adminAuthSettingsFromEnv(), deps: AdminAuthDeps = {}): Promise<string[]> {
+  return emailsFor(userId, s, deps);
+}
+
+/** True when a Clerk user is on the admin allowlist. */
+export async function isAllowlistedAdmin(userId: string, s: AdminAuthSettings = adminAuthSettingsFromEnv(), deps: AdminAuthDeps = {}): Promise<boolean> {
+  if (s.adminUserIds.includes(userId)) return true;
+  if (!s.adminEmails.length) return false;
+  try {
+    return (await emailsFor(userId, s, deps)).some(e => s.adminEmails.includes(e));
+  } catch {
+    return false;
+  }
+}
+
+let warnedNoAllowlist = false;
+
+export async function authenticateAdmin(
+  token: string,
+  s: AdminAuthSettings = adminAuthSettingsFromEnv(),
+  deps: AdminAuthDeps = {},
+): Promise<AdminAuthResult> {
+  if (safeEqual(token, s.adminApiKey)) return { ok: true, method: 'admin_key' };
+
+  if (!looksLikeJwt(token) || !clerkEnabled(s)) {
+    return { ok: false, status: 401, message: 'Invalid Admin API key' };
+  }
+
+  const session = await verifyClerkSession(token, s, deps);
+  if (!session.ok) return session;
+  const { userId, payload } = session;
 
   if (!s.adminEmails.length && !s.adminUserIds.length) {
     if (!warnedNoAllowlist) {

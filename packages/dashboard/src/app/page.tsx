@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import {
-  ArrowRight, Github, ShieldCheck, Zap, GitBranch, Gauge, Database, KeyRound, BarChart3, FolderKey, Radio, Check,
+  ArrowRight, Github, ShieldCheck, Zap, GitBranch, Gauge, Database, KeyRound, BarChart3, FolderKey, Radio, BookOpen, Layers, Trophy, Sparkles,
 } from 'lucide-react';
 import { CodeTabs } from '@/components/landing/code-tabs';
-import { clerkEnabled, SIGN_IN_URL } from '@/lib/clerk';
+import { SIGN_IN_URL } from '@/lib/clerk';
+import { SiteHeader, SiteFooter, GITHUB } from '@/components/landing/site-chrome';
+import { PlanCards } from '@/components/billing/plan-cards';
+import { paymentsEnabled } from '@/lib/billing/razorpay';
 
 const ENDPOINT = 'https://devai-gateway.onrender.com/v1/chat/completions';
-const GITHUB = 'https://github.com/ayush8620/DevAI';
 
 const providers = ['Google Gemini', 'OpenAI', 'Anthropic', 'Groq', 'Ollama Cloud'];
 
@@ -57,15 +59,6 @@ const features = [
     body: 'Set stream: true for OpenAI-compatible Server-Sent Events. Failover happens before the first byte, and usage is logged when the stream ends.',
   },
 ];
-
-const plans = [
-  { name: 'Free', who: 'For trying DevAI and side projects.' },
-  { name: 'Student', who: 'For students learning to build with AI.' },
-  { name: 'Pro', who: 'For individual developers shipping apps.', highlight: true },
-  { name: 'Team', who: 'For teams sharing providers, keys and analytics.' },
-];
-
-const included = ['All providers and routing modes', 'Multi-key failover', 'Streaming and caching', 'Usage analytics dashboard'];
 
 const curl = `curl ${ENDPOINT} \\
   -H "Authorization: Bearer dvai_your_app_key" \\
@@ -126,31 +119,7 @@ function Section({ id, eyebrow, title, children, className = '' }: { id?: string
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Nav */}
-      <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
-          <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground text-sm">D</span>
-            <span className="text-lg">DevAI</span>
-          </Link>
-          <nav className="hidden md:flex items-center gap-7 text-sm text-muted-foreground">
-            <a href="#features" className="hover:text-foreground transition-colors">Features</a>
-            <a href="#code" className="hover:text-foreground transition-colors">Code</a>
-            <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
-            <a href={GITHUB} target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors">GitHub</a>
-          </nav>
-          <div className="flex items-center gap-2">
-            {clerkEnabled && (
-              <Link href={SIGN_IN_URL} className="hidden sm:inline-flex rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-                Sign in
-              </Link>
-            )}
-            <Link href="/dashboard" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
-              Open dashboard <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main>
         {/* Hero */}
@@ -162,7 +131,7 @@ export default function LandingPage() {
           <div className="mx-auto max-w-6xl grid gap-12 lg:grid-cols-[1.05fr_1fr] lg:items-center">
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border bg-card/60 px-3 py-1 text-xs text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Open source · Free during beta
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Open source · Free plan available
               </span>
               <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
                 One OpenAI-compatible endpoint for <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">many AI providers</span>
@@ -177,6 +146,9 @@ export default function LandingPage() {
                 <a href={GITHUB} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-lg border bg-card px-5 py-3 text-sm font-semibold hover:bg-muted">
                   <Github className="h-4 w-4" /> View on GitHub
                 </a>
+                <Link href="/docs" className="inline-flex items-center justify-center gap-2 rounded-lg border bg-card px-5 py-3 text-sm font-semibold hover:bg-muted">
+                  <BookOpen className="h-4 w-4" /> API docs
+                </Link>
               </div>
               <div className="mt-10">
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">Works with</p>
@@ -193,6 +165,30 @@ export default function LandingPage() {
             </div>
           </div>
         </section>
+
+        {/* Unique features */}
+        <Section id="unique" eyebrow="Only on DevAI" title="Built for students, hackers and free tiers" className="border-t">
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              {
+                icon: Layers, title: 'Free-key pooling', tag: 'Free: 2 keys · Student: 10 · Pro & Team: unlimited', href: '/dashboard/pool',
+                body: 'Drop your free Gemini, Groq and OpenRouter keys into a personal pool. DevAI rotates across them, parks a key for a cooldown the moment it hits a 429 and carries on with the next, and shows how far your free quota was stretched.',
+              },
+              {
+                icon: Trophy, title: 'Hackathon kits', tag: 'Included in Team', href: '/dashboard/kits',
+                body: 'Give every team a temporary API key with a hard request or token cap, an end time and an allowed-model list. Share one link that shows the quota left and the deadline. The gateway cuts off at the cap, and you can revoke a kit at any time.',
+              },
+            ].map(f => (
+              <Link key={f.title} href={f.href} className="group relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card to-card p-6 sm:p-8 shadow-sm transition-colors hover:border-primary/60">
+                <span className="absolute right-5 top-5 inline-flex items-center gap-1 rounded-full border border-primary/30 bg-background/60 px-2.5 py-0.5 text-[11px] font-semibold text-primary"><Sparkles className="h-3 w-3" />Unique</span>
+                <div className="grid h-11 w-11 place-items-center rounded-xl bg-primary/15 text-primary"><f.icon className="h-5 w-5" /></div>
+                <h3 className="mt-4 text-lg font-semibold">{f.title}</h3>
+                <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{f.body}</p>
+                <p className="mt-4 flex items-center justify-between gap-2 text-xs"><span className="font-medium text-foreground">{f.tag}</span><ArrowRight className="h-4 w-4 text-primary transition-transform group-hover:translate-x-0.5" /></p>
+              </Link>
+            ))}
+          </div>
+        </Section>
 
         {/* Features */}
         <Section id="features" eyebrow="Features" title="Everything between your app and the model" className="border-t bg-muted/20">
@@ -264,26 +260,12 @@ export default function LandingPage() {
         </Section>
 
         {/* Pricing */}
-        <Section id="pricing" eyebrow="Pricing" title="Simple plans. Free while in beta.">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {plans.map(p => (
-              <div key={p.name} className={`relative flex flex-col rounded-xl border bg-card p-6 shadow-sm ${p.highlight ? 'ring-2 ring-primary border-primary' : ''}`}>
-                {p.highlight && <span className="absolute -top-3 left-6 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground">Popular</span>}
-                <h3 className="text-lg font-semibold">{p.name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{p.who}</p>
-                <p className="mt-6 text-2xl font-bold">Free during beta</p>
-                <ul className="mt-6 space-y-2 text-sm flex-1">
-                  {included.map(i => (
-                    <li key={i} className="flex items-start gap-2 text-muted-foreground"><Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />{i}</li>
-                  ))}
-                </ul>
-                <Link href="/dashboard" className={`mt-8 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium ${p.highlight ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border hover:bg-muted'}`}>
-                  Get started
-                </Link>
-              </div>
-            ))}
+        <Section id="pricing" eyebrow="Pricing" title="Simple monthly plans in rupees">
+          <PlanCards paymentsEnabled={paymentsEnabled()} signInUrl={SIGN_IN_URL} compact />
+          <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-muted-foreground">
+            <p>You bring your own provider API keys; provider usage is billed by each provider under your own account.</p>
+            <Link href="/pricing" className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline">Compare all features <ArrowRight className="h-4 w-4" /></Link>
           </div>
-          <p className="mt-6 text-sm text-muted-foreground">You bring your own provider API keys; provider usage is billed by each provider under your own account.</p>
         </Section>
 
         {/* CTA */}
@@ -303,16 +285,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t px-5 sm:px-8 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <p>DevAI Gateway · Built by <a href="https://ayushyadav.dev" target="_blank" rel="noreferrer" className="font-medium text-foreground hover:text-primary">Ayush Yadav</a></p>
-          <div className="flex items-center gap-5">
-            <Link href="/dashboard" className="hover:text-foreground">Dashboard</Link>
-            <Link href="/dashboard/api-docs" className="hover:text-foreground">API docs</Link>
-            <a href={GITHUB} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground"><Github className="h-4 w-4" /> GitHub</a>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

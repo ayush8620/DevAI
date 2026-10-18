@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../../db/index.js';
 import { providers, providerCredentials, models } from '../../db/schema/index.js';
-import { eq, and, sql, count } from 'drizzle-orm';
+import { eq, and, sql, count, isNull } from 'drizzle-orm';
 import { logAudit } from '../../services/audit.js';
 import { adminActor } from '../../auth/admin.js';
 import { checkProviderHealth } from '../../services/health.js';
@@ -15,7 +15,8 @@ export const adminProviderRoutes = new Hono();
 // List all providers with credential and model counts
 adminProviderRoutes.get('/', async (c) => {
   try {
-    const allProviders = await db.select().from(providers);
+    // Users' personal pool providers are managed on /user/pool, not here.
+    const allProviders = await db.select().from(providers).where(isNull(providers.ownerUserId));
 
     const enriched = await Promise.all(allProviders.map(async (p) => {
       const [credCount] = await db.select({ count: count() })

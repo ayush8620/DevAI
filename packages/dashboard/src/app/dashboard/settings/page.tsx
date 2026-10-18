@@ -41,8 +41,8 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="p-8 space-y-8 max-w-4xl">
-      <div className="flex items-center justify-between">
+    <div className="p-5 sm:p-8 space-y-8 max-w-4xl">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">System Settings</h1>
           <p className="text-muted-foreground mt-1">Infrastructure, gateway connection, and admin credentials.</p>
@@ -124,7 +124,7 @@ export default function SettingsPage() {
           <div className="divide-y text-sm">
             <div className="py-2.5 flex justify-between">
               <span className="text-muted-foreground">API Base URL</span>
-              <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">{API_URL}</span>
+              <span className="ml-4 font-mono text-xs bg-muted px-2 py-0.5 rounded break-all text-right">{API_URL}</span>
             </div>
             <div className="py-2.5 flex justify-between">
               <span className="text-muted-foreground">Auth Protocol</span>

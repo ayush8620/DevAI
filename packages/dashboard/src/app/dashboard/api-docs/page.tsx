@@ -60,7 +60,7 @@ console.log(completion.choices[0].message.content);`;
 // Response headers: x-devai-key (key name + prefix/last 4), x-devai-key-fallbacks`;
 
   return (
-    <div className="p-8 space-y-10 max-w-5xl">
+    <div className="p-5 sm:p-8 space-y-10 max-w-5xl">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">API Documentation</h1>
         <p className="text-muted-foreground mt-2">

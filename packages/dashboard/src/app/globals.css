@@ -67,3 +67,33 @@
     @apply bg-background text-foreground;
   }
 }
+/*
+ * Dashboard polish (scoped to the /dashboard shell): landing-page style tables,
+ * cards and form controls without changing any page logic.
+ */
+@layer components {
+  .dash h1 {
+    @apply text-2xl sm:text-3xl font-bold tracking-tight;
+  }
+  .dash table thead tr {
+    @apply bg-muted/40;
+  }
+  .dash table thead th {
+    @apply text-[11px] font-semibold uppercase tracking-wider text-muted-foreground first:pl-4 last:pr-4;
+  }
+  .dash table tbody tr {
+    @apply transition-colors hover:bg-muted/30;
+  }
+  .dash .rounded-xl.border.bg-card {
+    @apply transition-colors;
+  }
+  .dash input:not([type='checkbox']):not([type='radio']),
+  .dash select,
+  .dash textarea {
+    @apply transition-shadow focus:outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30;
+  }
+  .dash button:focus-visible,
+  .dash a:focus-visible {
+    @apply outline-none ring-2 ring-primary/40;
+  }
+}

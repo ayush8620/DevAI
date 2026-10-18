@@ -57,6 +57,12 @@ export async function authMiddleware(c: Context, next: Next) {
 
       c.set('projectId', projectResult.id);
       c.set('project', projectResult);
+      if (projectResult.kind === 'kit') {
+        const [kit] = await db.select().from(schema.hackathonKits)
+          .where(eq(schema.hackathonKits.projectId, projectResult.id)).limit(1);
+        if (!kit) return c.json({ error: { type: 'authentication_error', message: 'Hackathon kit not found' } }, 401);
+        c.set('kit', kit);
+      }
       
       return await next();
     } catch (err: any) {

@@ -89,6 +89,55 @@ const fetchApi = async (path: string, options?: RequestInit) => {
   }
 };
 
+/** /user/* endpoints: the signed-in user's own data. Only the Clerk session is sent (no admin key). */
+const fetchUser = async (path: string, options?: RequestInit) => {
+  const token = await getSessionToken();
+  if (!token) throw new Error('Sign in to use this page.');
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options?.headers as Record<string, string> || {}) },
+    });
+  } catch {
+    throw new Error('Gateway is not reachable. Is it running on ' + API_URL + '?');
+  }
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(body?.error?.message || `API Error: ${response.status}`) as Error & { type?: string };
+    err.type = body?.error?.type;
+    throw err;
+  }
+  return body;
+};
+
+export const userApi = {
+  // Personal key pool
+  getPool: () => fetchUser('/user/pool').then(r => r.data),
+  addPoolKey: (data: { provider: string; name?: string; apiKey: string; defaultModel?: string; quotaLimit?: number | null }) =>
+    fetchUser('/user/pool/keys', { method: 'POST', body: JSON.stringify(data) }).then(r => r.data),
+  updatePoolKey: (id: string, data: { enabled?: boolean; name?: string }) =>
+    fetchUser(`/user/pool/keys/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then(r => r.data),
+  deletePoolKey: (id: string) => fetchUser(`/user/pool/keys/${id}`, { method: 'DELETE' }).then(r => r.data),
+  setPoolStrategy: (keyStrategy: string) =>
+    fetchUser('/user/pool/strategy', { method: 'PUT', body: JSON.stringify({ keyStrategy }) }).then(r => r.data),
+  createPoolApiKey: (name: string) => fetchUser('/user/pool/api-keys', { method: 'POST', body: JSON.stringify({ name }) }).then(r => r.data),
+  revokePoolApiKey: (id: string) => fetchUser(`/user/pool/api-keys/${id}`, { method: 'DELETE' }).then(r => r.data),
+
+  // Hackathon kits
+  getKits: () => fetchUser('/user/kits').then(r => r.data),
+  createKit: (data: Record<string, unknown>) => fetchUser('/user/kits', { method: 'POST', body: JSON.stringify(data) }).then(r => r.data),
+  revokeKit: (id: string) => fetchUser(`/user/kits/${id}/revoke`, { method: 'POST' }).then(r => r.data),
+};
+
+/** Public kit page data (no auth). */
+export const getPublicKit = (token: string) =>
+  fetch(`${API_URL}/public/kits/${encodeURIComponent(token)}`).then(async r => {
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body?.error?.message || 'Kit not found');
+    return body.data;
+  });
+
 export const api = {
   // Who the gateway thinks we are (Clerk user or admin key)
   getMe: () => fetchApi('/admin/me').then(r => r.data || r),
