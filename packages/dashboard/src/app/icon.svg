@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="DevAI">
   <title>DevAI</title>
-  <defs><linearGradient id="devai-g" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2563EB"/><stop offset="0.55" stop-color="#3B82F6"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>
-  <rect width="64" height="64" rx="16" fill="url(#devai-g)"/>
-  <g fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 32H27"/><path d="M27 32C35 32 35 19 43 19"/><path d="M27 32H43"/><path d="M27 32C35 32 35 45 43 45"/></g><circle cx="17" cy="32" r="6" fill="#FFFFFF"/><g fill="#FFFFFF"><circle cx="46" cy="19" r="4.25"/><circle cx="46" cy="32" r="4.25"/><circle cx="46" cy="45" r="4.25"/></g>
+  <!-- Favicon cut of public/brand/devai-mark.svg: filled white tile so it reads on light and dark tabs; heavier strokes for 16 px -->
+  <rect x="2.5" y="2.5" width="59" height="59" rx="14" fill="#FFFFFF" stroke="#0A0A0A" stroke-width="5"/>
+  <path d="M16 46V18H31C41 18 47 25 47 32 47 39 41 46 31 46H29C22.5 46 22.5 32 29 32H33" fill="none" stroke="#0A0A0A" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="36.5" cy="32" r="5.6" fill="#F97316"/>
 </svg>

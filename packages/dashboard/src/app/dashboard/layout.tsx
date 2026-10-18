@@ -2,8 +2,9 @@ import type { Metadata } from 'next';
 import { Sidebar } from '@/components/layout/sidebar';
 
 export const metadata: Metadata = {
-  title: 'DevAI Gateway Dashboard',
-  description: 'Admin dashboard for DevAI Gateway',
+  title: 'Dashboard',
+  description: 'Manage your DevAI provider keys, projects, usage and billing.',
+  robots: { index: false, follow: false },
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

@@ -15,7 +15,7 @@ A production-ready API gateway that gives your applications **one unified, OpenA
 
 ## Brand assets
 
-Hand-written SVGs in `packages/dashboard/public/brand/`: `devai-mark.svg` (one node routed to three), `devai-logo-light.svg` / `devai-logo-dark.svg` (mark + wordmark for light / dark backgrounds) and `devai-og.svg`. The favicon is `packages/dashboard/src/app/icon.svg`. Regenerate the PNGs (32 px favicon, 180 px Apple touch icon, 1200×630 Open Graph image) with `node scripts/brand-assets.mjs`.
+Hand-written SVGs in `packages/dashboard/public/brand/`: `devai-mark.svg` (the "loop-route D": an outlined rounded tile with a D-shaped route that loops back to an orange dot; black on light backgrounds), `devai-mark-inverted.svg` (white, for dark backgrounds), `devai-logo-light.svg` / `devai-logo-dark.svg` (mark + wordmark for light / dark backgrounds) and `devai-og.svg`. The favicon is `packages/dashboard/src/app/icon.svg` (a filled white tile with a heavier black route and orange dot, so it reads on light and dark browser tabs at 16 px). Regenerate the PNGs (32 px favicon, 180 px Apple touch icon, 1200×630 Open Graph image) with `node scripts/brand-assets.mjs`.
 
 ## Architecture
 

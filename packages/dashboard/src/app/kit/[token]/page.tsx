@@ -5,7 +5,7 @@ import { SiteHeader, SiteFooter } from '@/components/landing/site-chrome';
 import { KitMeter, kitStatusBadge, timeLeft } from '@/components/kits/kit-meter';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Hackathon kit · DevAI', robots: { index: false } };
+export const metadata: Metadata = { title: 'Hackathon kit', description: 'A DevAI hackathon kit: temporary, capped API keys for a hackathon team.', robots: { index: false, follow: false } };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 

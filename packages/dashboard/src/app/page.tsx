@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
   ArrowRight, Github, ShieldCheck, Zap, GitBranch, Gauge, Database, KeyRound, BarChart3, FolderKey, Radio, BookOpen, Layers, Trophy, Sparkles,
@@ -7,6 +8,24 @@ import { SIGN_IN_URL } from '@/lib/clerk';
 import { SiteHeader, SiteFooter, GITHUB } from '@/components/landing/site-chrome';
 import { PlanCards } from '@/components/billing/plan-cards';
 import { paymentsEnabled } from '@/lib/billing/razorpay';
+import { pageMetadata, jsonLd, SITE_URL, SITE_NAME, GITHUB_URL } from '@/lib/seo';
+
+export const metadata: Metadata = pageMetadata({
+  title: 'DevAI: OpenAI-compatible AI API gateway and LLM router with your own keys',
+  absoluteTitle: true,
+  description: 'One OpenAI-compatible endpoint for OpenAI, Anthropic, Gemini, Groq, OpenRouter and Mistral. Bring your own key, get failover, key rotation and usage analytics. Rupee pricing, a student plan and hackathon API keys.',
+  path: '/',
+});
+
+/** Short, factual FAQ. Rendered on the page and as FAQPage structured data. */
+const FAQ: { q: string; a: string }[] = [
+  { q: 'What is DevAI?', a: 'DevAI is an AI API gateway: one OpenAI-compatible endpoint that forwards your requests to OpenAI, Anthropic, Gemini, Groq, OpenRouter or Mistral, with automatic failover, key rotation, streaming, caching and usage analytics.' },
+  { q: 'Do I need my own provider API keys?', a: 'Yes. DevAI is bring-your-own-key: you add your own provider keys, they are encrypted, and your requests run only on them. Provider usage is billed by each provider to your own account; DevAI never uses anyone else’s quota for you.' },
+  { q: 'Does it work with the OpenAI SDK?', a: 'Yes. Point any OpenAI client at the DevAI base URL, use a dvai_ key, and set the model to "auto" or any model your keys support. Chat completions and streaming work the same way.' },
+  { q: 'How much does DevAI cost?', a: 'There is a Free plan. Paid plans are billed monthly in Indian rupees through Razorpay: Student ₹99, Pro ₹499 and Team ₹1,999. See the pricing page for limits.' },
+  { q: 'Who can use the Student plan?', a: 'Students with a verified college email address (for example .edu or .ac.in). It adds more of your own keys, all key strategies, parallel routing and caching.' },
+  { q: 'What are hackathon kits?', a: 'On the Team plan, an organiser can create temporary API keys for hackathon teams, with request and token caps, an expiry time and a share page. Kits run on the organiser’s own provider keys.' },
+];
 
 const ENDPOINT = 'https://devai-gateway.onrender.com/v1/chat/completions';
 
@@ -123,8 +142,36 @@ function Section({ id, eyebrow, title, children, className = '' }: { id?: string
 }
 
 export default function LandingPage() {
+  const structuredData = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: `${SITE_URL}/brand/devai-mark-512.png`,
+      sameAs: [GITHUB_URL],
+      founder: { '@type': 'Person', name: 'Ayush Yadav', url: 'https://ayushyadav.dev' },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      name: SITE_NAME,
+      url: SITE_URL,
+      description: 'OpenAI-compatible AI API gateway and LLM router that runs on your own provider keys.',
+      inLanguage: 'en-IN',
+      publisher: { '@id': `${SITE_URL}/#organization` },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: FAQ.map(({ q, a }) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+    },
+  ];
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(structuredData)} />
       <SiteHeader />
 
       <main>
@@ -271,6 +318,21 @@ export default function LandingPage() {
           <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-muted-foreground">
             <p>You bring your own provider API keys; provider usage is billed by each provider under your own account.</p>
             <Link href="/pricing" className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline">Compare all features <ArrowRight className="h-4 w-4" /></Link>
+          </div>
+        </Section>
+
+        {/* FAQ */}
+        <Section id="faq" eyebrow="FAQ" title="Frequently asked questions" className="border-t">
+          <div className="mx-auto max-w-3xl divide-y rounded-2xl border bg-card">
+            {FAQ.map(({ q, a }) => (
+              <details key={q} className="group p-5 sm:p-6">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold [&::-webkit-details-marker]:hidden">
+                  <h3 className="text-base">{q}</h3>
+                  <span aria-hidden className="text-muted-foreground transition-transform group-open:rotate-45">+</span>
+                </summary>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{a}</p>
+              </details>
+            ))}
           </div>
         </Section>
 

@@ -4,11 +4,13 @@ import { ArrowRight, Github, BookOpen, Info } from 'lucide-react';
 import { CodeBlock, CodeGroup } from '@/components/docs/code-block';
 import { SiteHeader, SiteFooter, GITHUB } from '@/components/landing/site-chrome';
 import { DocsToc, type TocItem } from '@/components/docs/toc';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'API reference — DevAI Gateway',
-  description: 'DevAI Gateway API: bring-your-own-key, OpenAI-compatible chat completions with multi-provider failover, streaming, parallel routing, multi-key strategies, usage and admin endpoints.',
-};
+export const metadata: Metadata = pageMetadata({
+  title: 'API docs: OpenAI-compatible LLM gateway reference',
+  description: 'DevAI Gateway API reference: OpenAI-compatible chat completions on your own keys (bring your own key) for OpenAI, Gemini, Groq, OpenRouter, Anthropic and Mistral. Streaming, failover, LLM routing modes, key rotation, caching and usage endpoints.',
+  path: '/docs',
+});
 
 const BASE = 'https://devai-gateway.onrender.com';
 

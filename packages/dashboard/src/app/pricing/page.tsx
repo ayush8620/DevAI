@@ -3,14 +3,16 @@ import Link from 'next/link';
 import { Check, Minus, GraduationCap, ShieldCheck } from 'lucide-react';
 import { SiteHeader, SiteFooter } from '@/components/landing/site-chrome';
 import { PlanCards } from '@/components/billing/plan-cards';
-import { PLANS, formatInr, BILLING_PERIOD_DAYS } from '@/lib/billing/plans';
+import { PLANS, formatInr, BILLING_PERIOD_DAYS, CURRENCY } from '@/lib/billing/plans';
 import { paymentsEnabled } from '@/lib/billing/razorpay';
 import { SIGN_IN_URL } from '@/lib/clerk';
+import { pageMetadata, jsonLd, SITE_URL, SITE_NAME } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Pricing — DevAI Gateway',
-  description: 'DevAI plans: Free, Student ₹99/month, Pro ₹499/month and Team ₹1,999/month. Pay securely with Razorpay (UPI, cards, netbanking).',
-};
+export const metadata: Metadata = pageMetadata({
+  title: 'Pricing in INR: Free, Student, Pro and Team plans',
+  description: `DevAI AI API gateway pricing in rupees: ${PLANS.map(p => `${p.name} ${p.priceInr ? `${formatInr(p.priceInr)}/month` : '₹0'}`).join(', ')}. Student plan for college emails, hackathon API keys on Team. Bring your own key; pay with Razorpay (UPI, cards, netbanking).`,
+  path: '/pricing',
+});
 
 // Read the Razorpay env vars at request time, so adding keys only needs a redeploy of env, not code.
 export const dynamic = 'force-dynamic';
@@ -42,8 +44,29 @@ const faqs = [
 
 export default function PricingPage() {
   const enabled = paymentsEnabled();
+  // SoftwareApplication with one Offer per plan, straight from lib/billing/plans.ts
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: `${SITE_NAME} Gateway`,
+    applicationCategory: 'DeveloperApplication',
+    operatingSystem: 'Web',
+    url: SITE_URL,
+    description: 'OpenAI-compatible AI API gateway and LLM router that runs on your own provider keys, with failover, key rotation, caching and usage analytics.',
+    offers: PLANS.map(p => ({
+      '@type': 'Offer',
+      name: p.name,
+      description: p.tagline,
+      price: p.priceInr.toFixed(2),
+      priceCurrency: CURRENCY,
+      url: `${SITE_URL}/pricing`,
+      availability: 'https://schema.org/InStock',
+      ...(p.priceInr > 0 ? { priceSpecification: { '@type': 'UnitPriceSpecification', price: p.priceInr.toFixed(2), priceCurrency: CURRENCY, billingDuration: `P${BILLING_PERIOD_DAYS}D`, unitText: `${BILLING_PERIOD_DAYS} days` } } : {}),
+    })),
+  };
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <script type="application/ld+json" dangerouslySetInnerHTML={jsonLd(structuredData)} />
       <SiteHeader active="/pricing" />
 
       <main>
