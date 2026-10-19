@@ -32,8 +32,8 @@ export function setAdminKey(key: string): void {
 export async function getSessionToken(): Promise<string | null> {
   if (!clerkEnabled || typeof window === 'undefined') return null;
   // Right after a sign-in redirect the session can take a moment to become active.
-  // /dashboard is only reachable with a session (middleware), so retry briefly there.
-  const attempts = window.location.pathname.startsWith('/dashboard') ? 4 : 1;
+  // /dashboard and /admin are only reachable with a session (middleware), so retry briefly there.
+  const attempts = /^\/(dashboard|admin)(\/|$)/.test(window.location.pathname) ? 4 : 1;
   for (let i = 0; i < attempts; i++) {
     try {
       const token = await getToken();
@@ -56,7 +56,8 @@ async function credentialCandidates(): Promise<string[]> {
   return out.length ? out : [''];
 }
 
-const fetchApi = async (path: string, options?: RequestInit) => {
+/** /admin/* endpoints: the Clerk session (allowlisted admins only), then the saved admin key. Used by lib/admin-api.ts. */
+export const fetchAdmin = async (path: string, options?: RequestInit) => {
   const url = `${API_URL}${path}`;
   const candidates = await credentialCandidates();
 
@@ -112,6 +113,11 @@ const fetchUser = async (path: string, options?: RequestInit) => {
 };
 
 export const userApi = {
+  // Who am I (plan, and whether to show the Admin link)
+  getMe: () => fetchUser('/user/me').then(r => r.data as { userId: string; plan: string; isAdmin: boolean; status: string }),
+  // Your own traffic (your key pool and your hackathon kits)
+  getUsage: (period: 'today' | 'week' | 'month' = 'week') => fetchUser(`/user/usage?period=${period}`).then(r => r.data),
+
   // Your provider keys (bring your own key)
   getPool: () => fetchUser('/user/pool').then(r => r.data),
   addPoolKey: (data: { provider: string; name?: string; apiKey: string; defaultModel?: string; quotaLimit?: number | null }) =>
@@ -141,78 +147,5 @@ export const getPublicKit = (token: string) =>
     return body.data;
   });
 
-export const api = {
-  // Who the gateway thinks we are (Clerk user or admin key)
-  getMe: () => fetchApi('/admin/me').then(r => r.data || r),
-
-  // Promo codes (admin)
-  getCoupons: () => fetchApi('/admin/coupons').then(r => r.data || r),
-  createCoupon: (data: Record<string, unknown>) =>
-    fetchApi('/admin/coupons', { method: 'POST', body: JSON.stringify(data) }).then(r => r.data || r),
-  updateCoupon: (id: string, data: { status?: 'active' | 'disabled'; expiresAt?: string | null; maxRedemptions?: number | null }) =>
-    fetchApi(`/admin/coupons/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then(r => r.data || r),
-
-  // Analytics
-  getOverview: () => fetchApi('/admin/analytics/overview').then(r => r.data || r),
-  getRecentRequests: () => fetchApi('/admin/analytics/recent-requests').then(r => r.data || r),
-  getAnalyticsByProvider: (period?: string) => fetchApi(`/admin/analytics/by-provider${period ? `?period=${period}` : ''}`).then(r => r.data || r),
-  getAnalyticsByModel: (period?: string) => fetchApi(`/admin/analytics/by-model${period ? `?period=${period}` : ''}`).then(r => r.data || r),
-  getAnalyticsByProject: (period?: string) => fetchApi(`/admin/analytics/by-project${period ? `?period=${period}` : ''}`).then(r => r.data || r),
-
-  // Providers
-  getProviders: () => fetchApi('/admin/providers').then(r => r.data || r),
-  createProvider: (data: { type: string; name: string; baseUrl?: string }) =>
-    fetchApi('/admin/providers', { method: 'POST', body: JSON.stringify(data) }).then(r => r.data || r),
-  updateProvider: (id: string, data: Record<string, unknown>) =>
-    fetchApi(`/admin/providers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then(r => r.data || r),
-  deleteProvider: (id: string) =>
-    fetchApi(`/admin/providers/${id}`, { method: 'DELETE' }).then(r => r.data || r),
-  testProvider: (id: string) =>
-    fetchApi(`/admin/providers/${id}/test`, { method: 'POST' }).then(r => r.data || r),
-
-  // Provider Models
-  getProviderModels: (providerId: string) =>
-    fetchApi(`/admin/providers/${providerId}/models`).then(r => r.data || r),
-  addProviderModel: (providerId: string, data: { modelId: string; displayName?: string }) =>
-    fetchApi(`/admin/providers/${providerId}/models`, { method: 'POST', body: JSON.stringify(data) }).then(r => r.data || r),
-  deleteProviderModel: (providerId: string, modelId: string) =>
-    fetchApi(`/admin/providers/${providerId}/models/${modelId}`, { method: 'DELETE' }).then(r => r.data || r),
-  syncProviderModels: (providerId: string) =>
-    fetchApi(`/admin/providers/${providerId}/sync-models`, { method: 'POST' }).then(r => r.data || r),
-
-  // Credentials (routed under /admin/credentials)
-  getCredentials: (providerId: string) =>
-    fetchApi(`/admin/credentials/provider/${providerId}`).then(r => r.data || r),
-  createCredential: (providerId: string, data: { name: string; apiKey: string; quotaLimit?: number }) =>
-    fetchApi(`/admin/credentials/provider/${providerId}`, { method: 'POST', body: JSON.stringify(data) }).then(r => r.data || r),
-  updateCredential: (id: string, data: { enabled?: boolean; name?: string }) =>
-    fetchApi(`/admin/credentials/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then(r => r.data || r),
-  deleteCredential: (id: string) =>
-    fetchApi(`/admin/credentials/${id}`, { method: 'DELETE' }).then(r => r.data || r),
-  testCredential: (id: string) =>
-    fetchApi(`/admin/credentials/${id}/test`, { method: 'POST' }).then(r => r.data || r),
-
-  // Projects
-  getProjects: () => fetchApi('/admin/projects').then(r => r.data || r),
-  createProject: (data: { name: string; description?: string }) =>
-    fetchApi('/admin/projects', { method: 'POST', body: JSON.stringify(data) }).then(r => r.data || r),
-  updateProject: (id: string, data: Record<string, unknown>) =>
-    fetchApi(`/admin/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then(r => r.data || r),
-  deleteProject: (id: string) =>
-    fetchApi(`/admin/projects/${id}`, { method: 'DELETE' }).then(r => r.data || r),
-
-  // API Keys (routed under /admin/api-keys)
-  getApiKeys: (projectId: string) =>
-    fetchApi(`/admin/api-keys/project/${projectId}`).then(r => r.data || r),
-  createApiKey: (projectId: string, data: { name: string }) =>
-    fetchApi(`/admin/api-keys/project/${projectId}`, { method: 'POST', body: JSON.stringify(data) }),
-  deleteApiKey: (id: string) =>
-    fetchApi(`/admin/api-keys/${id}`, { method: 'DELETE' }).then(r => r.data || r),
-
-  // Audit
-  getAuditLogs: (filters?: { limit?: number }) =>
-    fetchApi(`/admin/audit-logs${filters?.limit ? `?limit=${filters.limit}` : ''}`),
-
-  // Health (public, no auth needed)
-  getHealth: () => fetch(`${API_URL}/v1/health`).then(r => r.json()).catch(() => ({ status: 'unreachable' })),
-};
+/** Public gateway health (no auth). */
+export const getGatewayHealth = () => fetch(`${API_URL}/v1/health`).then(r => r.json()).catch(() => ({ status: 'unreachable' }));
