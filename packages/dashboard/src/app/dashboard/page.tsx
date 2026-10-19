@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Activity, Zap, Database, Clock, BookOpen, KeyRound, ArrowRight } from 'lucide-react';
-import { api, userApi } from '@/lib/api';
+import { Activity, Zap, AlertTriangle, Clock, BookOpen, KeyRound, ArrowRight } from 'lucide-react';
+import { userApi } from '@/lib/api';
 import { clerkEnabled } from '@/lib/clerk';
 import { ByokOnboarding } from '@/components/byok/onboarding';
 
@@ -43,24 +43,18 @@ function KeyHealthCard({ pool }: { pool: any }) {
 
 
 export default function Dashboard() {
-  const [overview, setOverview] = useState<any>(null);
-  const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(!clerkEnabled);
+  const [usage, setUsage] = useState<any>(null);
+  const [loading, setLoading] = useState(clerkEnabled);
   const [pool, setPool] = useState<any>(null);
 
   useEffect(() => {
-    // Every signed-in user: their own keys and the bring-your-own-key onboarding
-    if (clerkEnabled) userApi.getPool().then(setPool).catch(() => {});
-    Promise.all([
-      api.getOverview().then(o => { setIsAdmin(true); return o; }).catch(() => ({ requestsToday: 0, tokensToday: 0, cacheHitRate: 0, avgLatencyMs: 0 })),
-      api.getRecentRequests().catch(() => [])
-    ]).then(([o, r]) => {
-      setOverview(o);
-      setRequests(r);
-      setLoading(false);
-    });
+    if (!clerkEnabled) return;
+    // Your own keys, onboarding and today's traffic on them (never anybody else's).
+    userApi.getPool().then(setPool).catch(() => {});
+    userApi.getUsage('today').then(setUsage).catch(() => setUsage(null)).finally(() => setLoading(false));
   }, []);
+  const today = usage?.today;
+  const requests: any[] = usage?.recent ?? [];
 
   return (
     <div className="p-5 sm:p-8 space-y-8">
@@ -68,7 +62,7 @@ export default function Dashboard() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Dashboard</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">Overview</h1>
-          <p className="text-muted-foreground mt-1">{isAdmin ? 'Your provider keys, today\u2019s traffic through the gateway and the latest requests.' : 'Your provider keys and how to call the gateway with them.'}</p>
+          <p className="text-muted-foreground mt-1">Your provider keys, today&rsquo;s requests on them and your latest calls.</p>
         </div>
         <Link href="/docs" className="inline-flex items-center gap-2 self-start sm:self-auto rounded-lg border bg-card px-3.5 py-2 text-sm font-medium hover:bg-muted transition-colors">
           <BookOpen className="h-4 w-4" /> API docs
@@ -78,13 +72,13 @@ export default function Dashboard() {
       {pool?.onboarding && <ByokOnboarding nextStep={pool.onboarding.nextStep} />}
       {pool && pool.keys?.length > 0 && <KeyHealthCard pool={pool} />}
 
-      {(isAdmin || loading) && <>
+      {(usage || loading) && <>
       <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
         {[ 
-          { title: 'Requests Today', value: overview?.requestsToday, icon: Activity },
-          { title: 'Tokens Today', value: overview?.tokensToday, icon: Zap },
-          { title: 'Cache Hit Rate', value: overview?.cacheHitRate ? `${overview.cacheHitRate}%` : '0%', icon: Database },
-          { title: 'Avg Latency', value: overview?.avgLatencyMs ? `${overview.avgLatencyMs}ms` : '0ms', icon: Clock }
+          { title: 'Requests Today', value: today?.requests?.toLocaleString(), icon: Activity },
+          { title: 'Tokens Today', value: today?.tokens?.toLocaleString(), icon: Zap },
+          { title: 'Error Rate', value: `${today?.errorRate ?? 0}%`, icon: AlertTriangle },
+          { title: 'Avg Latency', value: `${today?.avgLatencyMs ?? 0}ms`, icon: Clock }
         ].map((stat, i) => (
           <div key={i} className="rounded-xl border bg-card text-card-foreground shadow-sm transition-colors hover:border-primary/50">
             <div className="p-4 sm:p-6 flex flex-row items-center justify-between gap-2 pb-3">
@@ -100,7 +94,7 @@ export default function Dashboard() {
 
       <div className="rounded-xl border bg-card text-card-foreground shadow-sm">
         <div className="p-6 flex items-center justify-between">
-          <h3 className="font-semibold leading-none tracking-tight">Recent Requests</h3>
+          <h3 className="font-semibold leading-none tracking-tight">Your recent requests</h3>
           <Link href="/dashboard/usage" className="text-xs font-medium text-primary hover:underline">View usage</Link>
         </div>
         <div className="p-6 pt-0">
@@ -110,7 +104,6 @@ export default function Dashboard() {
                 <tr className="border-b transition-colors hover:bg-muted/50">
                   <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Time</th>
                   <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Model</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Provider</th>
                   <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
                   <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Latency</th>
                   <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Tokens</th>
@@ -120,16 +113,15 @@ export default function Dashboard() {
               <tbody className="[&_tr:last-child]:border-0">
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="border-b transition-colors"><td colSpan={7} className="p-4"><div className="h-6 w-full bg-muted animate-pulse rounded" /></td></tr>
+                    <tr key={i} className="border-b transition-colors"><td colSpan={6} className="p-4"><div className="h-6 w-full bg-muted animate-pulse rounded" /></td></tr>
                   ))
                 ) : requests.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-6 text-muted-foreground">No recent requests</td></tr>
+                  <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">No requests yet. Create an API key under Your keys and call the gateway.</td></tr>
                 ) : (
                   requests.map((r: any) => (
                     <tr key={r.requestId} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                       <td className="p-4 align-middle whitespace-nowrap">{new Date(r.createdAt).toLocaleTimeString()}</td>
                       <td className="p-4 align-middle">{r.model}</td>
-                      <td className="p-4 align-middle">{r.provider}</td>
                       <td className="p-4 align-middle"><span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${r.status < 400 ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>{r.status}</span></td>
                       <td className="p-4 align-middle">{r.latencyMs}ms</td>
                       <td className="p-4 align-middle">{r.totalTokens}</td>
