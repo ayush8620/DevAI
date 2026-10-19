@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '@/lib/api';
+import { adminApi as api } from '@/lib/admin-api';
 import { ArrowDown, ArrowUp, Route, Save, Check } from 'lucide-react';
 
 type Mode = 'single' | 'fastest' | 'best';
