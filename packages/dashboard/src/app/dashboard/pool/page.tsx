@@ -94,7 +94,7 @@ export default function PoolPage() {
         </div>
         <span className="inline-flex items-center gap-2 self-start rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
           <Layers className="h-3.5 w-3.5 text-primary" />
-          {count} / {limit === null ? 'unlimited' : limit} keys · <span className="capitalize">{data?.plan ?? '…'}</span> plan{data?.isAdmin && ' · admin (Team limits)'}
+          {count} / {limit === null ? 'unlimited' : limit} keys · <span className="capitalize">{data?.plan ?? '…'}</span> plan
           {atLimit && <Link href="/pricing" className="font-medium text-primary hover:underline">Upgrade</Link>}
         </span>
       </div>
