@@ -14,4 +14,5 @@ export const auditLogs = pgTable('audit_logs', {
   actionIdx: index('audit_logs_action_idx').on(table.action),
   resourceTypeIdx: index('audit_logs_resource_type_idx').on(table.resourceType),
   createdAtIdx: index('audit_logs_created_at_idx').on(table.createdAt),
+  resourceIdIdx: index('audit_logs_resource_id_idx').on(table.resourceId),
 }));

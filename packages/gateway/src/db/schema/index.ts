@@ -11,3 +11,4 @@ export * from './audit-logs';
 export * from './cache-metadata';
 export * from './hackathon-kits';
 export * from './coupons';
+export * from './user-accounts';

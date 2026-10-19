@@ -25,4 +25,6 @@ export const usageRecords = pgTable('usage_records', {
   modelIdx: index('usage_records_model_idx').on(table.model),
   createdAtIdx: index('usage_records_created_at_idx').on(table.createdAt),
   statusIdx: index('usage_records_status_idx').on(table.status),
+  // Admin panel: per-user time ranges (drizzle/0004_admin_panel.sql)
+  projectCreatedIdx: index('usage_records_project_created_idx').on(table.projectId, table.createdAt),
 }));
