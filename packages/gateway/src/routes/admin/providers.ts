@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../../db/index.js';
-import { providers, providerCredentials, models } from '../../db/schema/index.js';
-import { eq, and, sql, count, isNull } from 'drizzle-orm';
+import { providers, providerCredentials, models, healthChecks } from '../../db/schema/index.js';
+import { eq, and, sql, count, isNull, inArray, desc, gte } from 'drizzle-orm';
 import { logAudit } from '../../services/audit.js';
 import { adminActor } from '../../auth/admin.js';
 import { checkProviderHealth } from '../../services/health.js';
@@ -46,6 +46,43 @@ adminProviderRoutes.get('/', async (c) => {
   } catch (err: any) {
     logger.error({ err: err.message }, 'Failed to list providers');
     return c.json({ error: { type: 'server_error', message: 'Failed to list providers' } }, 500);
+  }
+});
+
+// Health of the shared providers: last check per key and the last 24 hours (health_checks table)
+adminProviderRoutes.get('/health', async (c) => {
+  try {
+    const shared = (await db.select().from(providers).where(isNull(providers.ownerUserId))).filter(p => p.status !== 'deleted');
+    if (!shared.length) return c.json({ data: [] });
+    const ids = shared.map(p => p.id);
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [recent, creds] = await Promise.all([
+      db.select().from(healthChecks).where(and(inArray(healthChecks.providerId, ids), gte(healthChecks.checkedAt, since)))
+        .orderBy(desc(healthChecks.checkedAt)).limit(5000),
+      db.select({ id: providerCredentials.id, providerId: providerCredentials.providerId, name: providerCredentials.name, enabled: providerCredentials.enabled, status: providerCredentials.status })
+        .from(providerCredentials).where(inArray(providerCredentials.providerId, ids)),
+    ]);
+    const data = shared.map(p => {
+      const checks = recent.filter(h => h.providerId === p.id);
+      const ok = checks.filter(h => h.status === 'healthy' || h.status === 'degraded').length;
+      const keys = creds.filter(k => k.providerId === p.id).map(k => {
+        const last = checks.find(h => h.credentialId === k.id);
+        return { credentialId: k.id, name: k.name, enabled: k.enabled !== false, status: k.status ?? 'active',
+          lastCheck: last ? { status: last.status, latencyMs: last.latencyMs, error: last.error, checkedAt: last.checkedAt } : null };
+      });
+      const last = checks[0];
+      return {
+        providerId: p.id, name: p.name, type: p.type, status: p.status,
+        lastCheck: last ? { status: last.status, latencyMs: last.latencyMs, error: last.error, checkedAt: last.checkedAt } : null,
+        checks24h: checks.length, healthy24h: ok,
+        uptime24h: checks.length ? Math.round((ok / checks.length) * 1000) / 10 : null,
+        keys,
+      };
+    });
+    return c.json({ data });
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'Failed to load provider health');
+    return c.json({ error: { type: 'server_error', message: 'Failed to load provider health' } }, 500);
   }
 });
 

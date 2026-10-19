@@ -1,11 +1,16 @@
 import { Hono } from 'hono';
-import { getOverallUsageSummary, getRecentRequests, getUsageByProvider, getUsageByModel } from '../../services/usage.js';
+import { getOverallUsageSummary, getRecentRequests } from '../../services/usage.js';
+import { topUsers, usageByDay, usageByModel, usageByProvider } from '../../services/admin-usage.js';
+import { clampInt } from '../../billing/admin.js';
+import { userDirectory } from '../../services/user-directory.js';
+import { parsePeriod, periodStart } from './_util.js';
 import { db } from '../../db/index.js';
 import { projects, usageRecords } from '../../db/schema/index.js';
 import { eq, count, sum, gte, and } from 'drizzle-orm';
 import { logger } from '../../middleware/logger.js';
 
 export const adminAnalyticsRoutes = new Hono();
+
 
 // Overview stats
 adminAnalyticsRoutes.get('/overview', async (c) => {
@@ -36,8 +41,8 @@ adminAnalyticsRoutes.get('/overview', async (c) => {
 // Usage by provider
 adminAnalyticsRoutes.get('/by-provider', async (c) => {
   try {
-    const period = (c.req.query('period') || 'today') as 'today' | 'week' | 'month';
-    const data = await getUsageByProvider(undefined, period);
+    // Provider names included; users' own providers are merged by name.
+    const data = await usageByProvider(periodStart(parsePeriod(c.req.query('period'), 'today')));
     return c.json({ data });
   } catch (err: any) {
     logger.error({ err: err.message }, 'Failed to get usage by provider');
@@ -48,8 +53,7 @@ adminAnalyticsRoutes.get('/by-provider', async (c) => {
 // Usage by model
 adminAnalyticsRoutes.get('/by-model', async (c) => {
   try {
-    const period = (c.req.query('period') || 'today') as 'today' | 'week' | 'month';
-    const data = await getUsageByModel(undefined, period);
+    const data = await usageByModel(periodStart(parsePeriod(c.req.query('period'), 'today')));
     return c.json({ data });
   } catch (err: any) {
     logger.error({ err: err.message }, 'Failed to get usage by model');
@@ -106,6 +110,31 @@ adminAnalyticsRoutes.get('/recent-requests', async (c) => {
     return c.json({ data });
   } catch (err: any) {
     logger.error({ err: err.message }, 'Failed to get recent requests');
+    return c.json({ error: { type: 'server_error', message: 'Failed to get analytics' } }, 500);
+  }
+});
+
+// Requests, tokens and errors per day (?days=1-90, default 30)
+adminAnalyticsRoutes.get('/by-day', async (c) => {
+  try {
+    return c.json({ data: await usageByDay(clampInt(c.req.query('days'), 30, 1, 90)) });
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'Failed to get usage by day');
+    return c.json({ error: { type: 'server_error', message: 'Failed to get analytics' } }, 500);
+  }
+});
+
+// Heaviest users (?period=today|week|month, ?limit=1-50)
+adminAnalyticsRoutes.get('/top-users', async (c) => {
+  try {
+    const rows = await topUsers(periodStart(parsePeriod(c.req.query('period'), 'week')), clampInt(c.req.query('limit'), 10, 1, 50));
+    const emails = new Map<string, string | null>();
+    if (rows.length) {
+      try { for (const u of await userDirectory().byIds(rows.map(r => r.userId))) emails.set(u.id, u.email); } catch { /* emails optional */ }
+    }
+    return c.json({ data: rows.map(r => ({ ...r, email: emails.get(r.userId) ?? null })) });
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'Failed to get top users');
     return c.json({ error: { type: 'server_error', message: 'Failed to get analytics' } }, 500);
   }
 });
