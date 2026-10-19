@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/seo';
 
-// Public, indexable pages only (no /dashboard, /sign-in, /sign-up, /kit or /api).
+// Public, indexable pages only (no /dashboard, /admin, /sign-in, /sign-up, /kit or /api).
 export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();
   return [
