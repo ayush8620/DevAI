@@ -5,6 +5,7 @@ import { hashApiKey } from '../crypto/encryption.js';
 import '../config.js'; // loads .env before the admin auth settings are read
 import { logger } from './logger.js';
 import { authenticateAdmin } from '../auth/admin.js';
+import { isSuspended } from '../services/accounts.js';
 
 export async function authMiddleware(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
@@ -47,6 +48,10 @@ export async function authMiddleware(c: Context, next: Next) {
       
       if (!projectResult || projectResult.status !== 'active') {
         return c.json({ error: { type: 'authentication_error', message: 'Project is inactive or not found' } }, 401);
+      }
+      // Pool and kit keys stop working while their owner is suspended by an admin.
+      if (projectResult.ownerUserId && await isSuspended(projectResult.ownerUserId)) {
+        return c.json({ error: { type: 'account_suspended', message: 'The account that owns this API key is suspended.' } }, 403);
       }
 
       // Update lastUsedAt asynchronously (non-blocking)
