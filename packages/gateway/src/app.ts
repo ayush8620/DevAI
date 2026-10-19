@@ -11,7 +11,14 @@ import { adminAnalyticsRoutes } from './routes/admin/analytics.js';
 import { adminAuditRoutes } from './routes/admin/audit.js';
 import { adminMeRoutes } from './routes/admin/me.js';
 import { adminCouponRoutes } from './routes/admin/coupons.js';
+import { adminOverviewRoutes } from './routes/admin/overview.js';
+import { adminUserRoutes } from './routes/admin/users.js';
+import { adminSubscriptionRoutes } from './routes/admin/subscriptions.js';
+import { adminPoolRoutes } from './routes/admin/pool.js';
+import { adminSystemRoutes } from './routes/admin/system.js';
 import { userCouponRoutes } from './routes/user/coupons.js';
+import { userMeRoutes } from './routes/user/me.js';
+import { userUsageRoutes } from './routes/user/usage.js';
 import { userPoolRoutes } from './routes/user/pool.js';
 import { userKitRoutes } from './routes/user/kits.js';
 import { publicKitRoutes } from './routes/public/kits.js';
@@ -51,12 +58,20 @@ app.route('/admin/analytics', adminAnalyticsRoutes);
 app.route('/admin/audit-logs', adminAuditRoutes);
 app.route('/admin/me', adminMeRoutes);
 app.route('/admin/coupons', adminCouponRoutes);
+// Admin panel (/admin in the dashboard)
+app.route('/admin/overview', adminOverviewRoutes);
+app.route('/admin/users', adminUserRoutes);
+app.route('/admin/subscriptions', adminSubscriptionRoutes);
+app.route('/admin/pool', adminPoolRoutes);
+app.route('/admin/system', adminSystemRoutes);
 
 // User routes (any signed-in Clerk user; each user only sees their own data)
 app.use('/user/*', userAuthMiddleware());
 app.route('/user/pool', userPoolRoutes);
 app.route('/user/kits', userKitRoutes);
 app.route('/user/coupons', userCouponRoutes);
+app.route('/user/me', userMeRoutes);
+app.route('/user/usage', userUsageRoutes);
 
 // Global error handler
 app.onError((err, c) => {
