@@ -27,7 +27,7 @@ export function ClerkNotConfigured() {
   return (
     <div className="w-full max-w-md rounded-xl border bg-card p-6 text-sm text-muted-foreground shadow-sm">
       Sign-in is not configured for this deployment (no <code className="font-mono text-xs">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>).
-      Open the <Link href="/dashboard/settings" className="text-primary hover:underline">dashboard settings</Link> and use the gateway admin key instead.
+      Operators can open the <Link href="/admin/system" className="text-primary hover:underline">admin panel</Link> and use the gateway admin key instead.
     </div>
   );
 }
