@@ -204,6 +204,9 @@ userPoolRoutes.patch('/keys/:id', async (c) => {
   const row = await ownedCredential(user.userId, c.req.param('id'));
   if (!row) return c.json({ error: { type: 'not_found', message: 'Key not found' } }, 404);
   const body = await c.req.json().catch(() => ({}));
+  if (row.cred.status === 'revoked' && body?.enabled === true) {
+    return c.json({ error: { type: 'key_revoked', message: 'This key was revoked and cannot be enabled again. Add a new key instead.' } }, 403);
+  }
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (typeof body?.enabled === 'boolean') { updates.enabled = body.enabled; updates.status = body.enabled ? 'active' : 'disabled'; }
   if (typeof body?.name === 'string' && body.name.trim()) updates.name = body.name.trim().slice(0, 60);
