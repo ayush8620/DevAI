@@ -3,26 +3,35 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Server, FolderKanban, BarChart3, Settings, BookOpen, Sun, Moon, Menu, X, ExternalLink, Home, CreditCard, Layers, Trophy, Ticket,
+  LayoutDashboard, BarChart3, Settings, BookOpen, Sun, Moon, Menu, X, ExternalLink, Home, CreditCard, Layers, Trophy, ShieldCheck,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { UserButton } from '@clerk/nextjs';
 import { cn } from '@/lib/utils';
 import { clerkEnabled } from '@/lib/clerk';
 import { Logo as BrandLogo } from '@/components/brand/logo';
+import { userApi } from '@/lib/api';
+
+// Admin tools live in the separate panel at /admin. The user dashboard only shows a link to it,
+// and only to gateway admins (ADMIN_EMAILS / ADMIN_USER_IDS, answered by GET /user/me).
+function useIsAdmin(): boolean {
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!clerkEnabled) return;
+    let alive = true;
+    userApi.getMe().then(me => { if (alive) setIsAdmin(Boolean(me?.isAdmin)); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return isAdmin;
+}
 
 export const DASHBOARD_ROUTES = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   // Bring your own key: every user's requests run only on the keys they add here.
   { href: '/dashboard/pool', label: 'Your keys', icon: Layers },
-  // Admin-only: shared providers serve the admin's own projects, never other users.
-  { href: '/dashboard/providers', label: 'Shared providers', icon: Server },
-  { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { href: '/dashboard/usage', label: 'Usage', icon: BarChart3 },
   { href: '/dashboard/kits', label: 'Hackathon kits', icon: Trophy },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
-  // Admin-only: promo codes for paid plans.
-  { href: '/dashboard/coupons', label: 'Promo codes', icon: Ticket },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
   { href: '/dashboard/api-docs', label: 'Quick reference', icon: BookOpen },
 ];
@@ -41,7 +50,7 @@ function Logo() {
   );
 }
 
-function NavLinks({ pathname }: { pathname: string | null }) {
+function NavLinks({ pathname, isAdmin }: { pathname: string | null; isAdmin: boolean }) {
   return (
     <>
       <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/80">Manage</p>
@@ -74,6 +83,11 @@ function NavLinks({ pathname }: { pathname: string | null }) {
           );
         })}
       </nav>
+      {isAdmin && (
+        <Link href="/admin" className="mt-6 flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground">
+          <ShieldCheck className="h-3.5 w-3.5" /> Admin
+        </Link>
+      )}
     </>
   );
 }
@@ -103,6 +117,7 @@ function Footer({ mounted, isDark, toggle }: { mounted: boolean; isDark: boolean
 
 export function Sidebar() {
   const pathname = usePathname();
+  const isAdmin = useIsAdmin();
   const { resolvedTheme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
   // The theme is only known in the browser. Rendering the icon before mount made the
@@ -145,7 +160,7 @@ export function Sidebar() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-3 py-5"><NavLinks pathname={pathname} /></div>
+            <div className="flex-1 overflow-y-auto px-3 py-5"><NavLinks pathname={pathname} isAdmin={isAdmin} /></div>
             <Footer mounted={mounted} isDark={isDark} toggle={toggle} />
           </div>
         </div>
@@ -156,7 +171,7 @@ export function Sidebar() {
         <div className="flex h-16 items-center border-b px-5">
           <Logo />
         </div>
-        <div className="flex-1 overflow-y-auto px-3 py-5"><NavLinks pathname={pathname} /></div>
+        <div className="flex-1 overflow-y-auto px-3 py-5"><NavLinks pathname={pathname} isAdmin={isAdmin} /></div>
         <Footer mounted={mounted} isDark={isDark} toggle={toggle} />
       </aside>
     </>
