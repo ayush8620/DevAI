@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-DevAI Gateway
+# DevAI Gateway
 
 **Live:** [devai-dashboard-six.vercel.app](https://devai-dashboard-six.vercel.app) · **Docs:** [API reference](https://devai-dashboard-six.vercel.app/docs) · **Pricing:** [plans](https://devai-dashboard-six.vercel.app/pricing) · **API:** `https://devai-gateway.onrender.com/v1/chat/completions` · [Health](https://devai-gateway.onrender.com/v1/health)
 
